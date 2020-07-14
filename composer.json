@@ -1,5 +1,5 @@
 {
-    "name": "brianium/paratest",
+    "name": "vynhart/paratest",
     "require": {
         "php": "^7.1",
         "ext-pcre": "*",
