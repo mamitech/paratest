@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 namespace ParaTest\Runners\PHPUnit;
+use Symfony\Component\Yaml\Yaml;
 
 use Habitat\Habitat;
 
@@ -88,6 +89,7 @@ class Runner extends BaseRunner
                     'TEST_TOKEN' => $tokenData['token'],
                     'UNIQUE_TEST_TOKEN' => $tokenData['unique']
                 ] + Habitat::getAll();
+                $env = array_merge($env, $tokenData['envs']);
                 $this->running[$tokenData['token']] = \array_shift($this->pending)
                     ->run($opts->phpunit, $opts->filtered, $env, $opts->passthru, $opts->passthruPhp);
                 if ($opts->verbose) {
@@ -157,9 +159,34 @@ class Runner extends BaseRunner
     protected function initTokens()
     {
         $this->tokens = [];
-        for ($i = 1; $i <= $this->options->processes; ++$i) {
-            $this->tokens[$i] = ['token' => $i, 'unique' => \uniqid(\sprintf('%s_', $i)), 'available' => true];
+        // @vin
+        // I will add envs key in here, and then pass to the process that will
+        // be spawn within the context of certain token
+        //
+        // I will try it with a simple stupid way first, I'll directly read the config.yml in here,
+        // and then put it into the token
+        $config = $this->getMultiProcessConfig();
+        if ($this->options->processes > $config['processes']) {
+            // @vin
+            // todo: proper exception
+            throw new Exception("processes defined in config cant be less than process used in test.");
         }
+
+        for ($i = 1; $i <= $this->options->processes; ++$i) {
+            $this->tokens[$i] = [
+                'token' => $i,
+                'unique' => \uniqid(\sprintf('%s_', $i)),
+                'available' => true,
+                'envs' => $config['processes'][$i - 1]['env']
+            ];
+        }
+    }
+
+    private function getMultiProcessConfig() {
+        // @vin
+        // todo: encapsulate the file path into option
+        $configPath = getcwd()."/config/multi-process.yml";
+        return Yaml::parse(file_get_contents($configPath));
     }
 
     /**
