@@ -166,10 +166,10 @@ class Runner extends BaseRunner
         // I will try it with a simple stupid way first, I'll directly read the config.yml in here,
         // and then put it into the token
         $config = $this->getMultiProcessConfig();
-        if ($this->options->processes > $config['processes']) {
+        if ($this->options->processes > count($config['processes'])) {
             // @vin
             // todo: proper exception
-            throw new Exception("processes defined in config cant be less than process used in test.");
+            throw new \Exception("processes defined in config cant be less than process used in test.");
         }
 
         for ($i = 1; $i <= $this->options->processes; ++$i) {
