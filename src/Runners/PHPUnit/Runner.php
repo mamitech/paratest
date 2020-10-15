@@ -169,7 +169,7 @@ class Runner extends BaseRunner
         if ($this->options->processes > count($config['processes'])) {
             // @vin
             // todo: proper exception
-            throw new \Exception("processes defined in config cant be less than process used in test.");
+            throw new \Exception("processes defined in config cant be less than process used in test. Please add options --processes=".count($config('processes')));
         }
 
         for ($i = 1; $i <= $this->options->processes; ++$i) {
