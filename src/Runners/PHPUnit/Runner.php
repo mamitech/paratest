@@ -169,7 +169,7 @@ class Runner extends BaseRunner
         for ($i = 1; $i <= $this->options->processes; ++$i) {
             $env = [];
             foreach ($config['override_env'] as $key => $val) {
-                $env[$key] = $val['prefix'] . "_" . $i-1;
+                $env[$key] = $val['prefix'] . "_" . ($i-1);
             }
 
             $this->tokens[$i] = [
