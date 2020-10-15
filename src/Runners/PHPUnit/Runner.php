@@ -166,15 +166,9 @@ class Runner extends BaseRunner
         // I will try it with a simple stupid way first, I'll directly read the config.yml in here,
         // and then put it into the token
         $config = $this->getMultiProcessConfig();
-        if ($this->options->processes > count($config['processes'])) {
-            // @vin
-            // todo: proper exception
-            throw new \Exception("processes defined in config cant be less than process used in test. Please add options --processes=".count($config('processes')));
-        }
-
         for ($i = 1; $i <= $this->options->processes; ++$i) {
             $env = [];
-            foreach ($this->config['override_env'] as $key => $val) {
+            foreach ($config['override_env'] as $key => $val) {
                 $env[$key] = $val['prefix'] . "_" . $i;
             }
 
