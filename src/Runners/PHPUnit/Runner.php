@@ -185,7 +185,7 @@ class Runner extends BaseRunner
     private function getMultiProcessConfig() {
         // @vin
         // todo: encapsulate the file path into option
-        $configPath = getcwd()."/config/multi-process.yml";
+        $configPath = getcwd()."/config/multi-process-unit-test.yml";
         return Yaml::parse(file_get_contents($configPath));
     }
 
