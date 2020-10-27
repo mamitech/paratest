@@ -1,5 +1,5 @@
 {
-    "name": "vynhart/paratest",
+    "name": "mamitech/paratest",
     "require": {
         "php": "^7.1",
         "ext-pcre": "*",
