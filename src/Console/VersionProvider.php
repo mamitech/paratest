@@ -14,7 +14,7 @@ use Symfony\Component\Process\Process;
  */
 final class VersionProvider
 {
-    private const PACKAGE = 'brianium/paratest';
+    private const PACKAGE = 'mamitech/paratest';
 
     /**
      * @var null
@@ -66,6 +66,10 @@ final class VersionProvider
         }
 
         $struct = \json_decode($result, true, 16);
+        if (!isset($struct['packages'])) {
+            return;
+        }
+        $struct = $struct['packages'];
         if (!\is_array($struct)) {
             return;
         }
