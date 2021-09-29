@@ -20,7 +20,7 @@ class ParaTestApplication extends Application
 
     public function __construct()
     {
-        parent::__construct(static::NAME, VersionProvider::getVersion(static::VERSION));
+        parent::__construct(self::NAME, VersionProvider::getVersion(self::VERSION));
     }
 
     /**
@@ -28,7 +28,7 @@ class ParaTestApplication extends Application
      *
      * @todo for now paratest will only run the phpunit command
      */
-    public function doRun(InputInterface $input, OutputInterface $output)
+    public function doRun(InputInterface $input, OutputInterface $output): int
     {
         $this->add(new ParaTestCommand(new PHPUnit()));
 
@@ -38,8 +38,6 @@ class ParaTestApplication extends Application
     /**
      * The default InputDefinition for the application. Leave it to specific
      * Tester objects for specifying further definitions.
-     *
-     * @return InputDefinition
      */
     public function getDefinition(): InputDefinition
     {
@@ -48,11 +46,6 @@ class ParaTestApplication extends Application
         ]);
     }
 
-    /**
-     * @param InputInterface $input
-     *
-     * @return string
-     */
     public function getCommandName(InputInterface $input): string
     {
         return 'paratest';

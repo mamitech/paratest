@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace ParaTest\Tests\Unit\Coverage;
 
 use ParaTest\Coverage\CoverageMerger;
+use ParaTest\Tests\TestBase;
 use SebastianBergmann\CodeCoverage\CodeCoverage;
+use SebastianBergmann\CodeCoverage\Driver\Driver;
 use SebastianBergmann\CodeCoverage\Filter;
+use SebastianBergmann\CodeCoverage\RawCodeCoverageData;
 
-class CoverageMergerTest extends \ParaTest\Tests\TestBase
+use function assert;
+
+class CoverageMergerTest extends TestBase
 {
     protected function setUp(): void
     {
@@ -20,31 +25,35 @@ class CoverageMergerTest extends \ParaTest\Tests\TestBase
      *
      * @requires function \SebastianBergmann\CodeCoverage\CodeCoverage::merge
      */
-    public function testSimpleMerge()
+    public function testSimpleMerge(): void
     {
-        $firstFile = PARATEST_ROOT . '/src/Logging/LogInterpreter.php';
-        $secondFile = PARATEST_ROOT . '/src/Logging/MetaProvider.php';
+        $firstFile  = PARATEST_ROOT . DS . 'src' . DS . 'Logging' . DS . 'LogInterpreter.php';
+        $secondFile = PARATEST_ROOT . DS . 'src' . DS . 'Logging' . DS . 'MetaProvider.php';
 
         // Every time the two above files are changed, the line numbers
         // may change, and so these two numbers may need adjustments
-        $firstFileFirstLine = 39;
-        $secondFileFirstLine = 39;
+        $firstFileFirstLine  = 46;
+        $secondFileFirstLine = 53;
 
         $filter = new Filter();
-        $filter->addFilesToWhitelist([$firstFile, $secondFile]);
-        $coverage1 = new CodeCoverage(null, $filter);
+        $filter->includeFiles([$firstFile, $secondFile]);
+
+        $data      = RawCodeCoverageData::fromXdebugWithoutPathCoverage([
+            $firstFile => [$firstFileFirstLine => 1],
+            $secondFile => [$secondFileFirstLine => 1],
+        ]);
+        $coverage1 = new CodeCoverage(Driver::forLineCoverage($filter), $filter);
         $coverage1->append(
-            [
-                $firstFile => [$firstFileFirstLine => 1],
-                $secondFile => [$secondFileFirstLine => 1],
-            ],
+            $data,
             'Test1'
         );
-        $coverage2 = new CodeCoverage(null, $filter);
+
+        $data      = RawCodeCoverageData::fromXdebugWithoutPathCoverage([
+            $firstFile => [$firstFileFirstLine => 1, 1 + $firstFileFirstLine => 1],
+        ]);
+        $coverage2 = new CodeCoverage(Driver::forLineCoverage($filter), $filter);
         $coverage2->append(
-            [
-                $firstFile => [$firstFileFirstLine => 1, 1 + $firstFileFirstLine => 1],
-            ],
+            $data,
             'Test2'
         );
 
@@ -52,12 +61,12 @@ class CoverageMergerTest extends \ParaTest\Tests\TestBase
         $this->call($merger, 'addCoverage', $coverage1);
         $this->call($merger, 'addCoverage', $coverage2);
 
-        /** @var CodeCoverage $coverage */
         $coverage = $this->getObjectValue($merger, 'coverage');
+        assert($coverage instanceof CodeCoverage);
 
         $this->assertInstanceOf(CodeCoverage::class, $coverage);
 
-        $data = $coverage->getData();
+        $data = $coverage->getData()->lineCoverage();
 
         $this->assertCount(2, $data[$firstFile][$firstFileFirstLine]);
         $this->assertEquals('Test1', $data[$firstFile][$firstFileFirstLine][0]);
@@ -72,31 +81,35 @@ class CoverageMergerTest extends \ParaTest\Tests\TestBase
      *
      * @requires function \SebastianBergmann\CodeCoverage\CodeCoverage::merge
      */
-    public function testSimpleMergeLimited()
+    public function testSimpleMergeLimited(): void
     {
-        $firstFile = PARATEST_ROOT . '/src/Logging/LogInterpreter.php';
-        $secondFile = PARATEST_ROOT . '/src/Logging/MetaProvider.php';
+        $firstFile  = PARATEST_ROOT . DS . 'src' . DS . 'Logging' . DS . 'LogInterpreter.php';
+        $secondFile = PARATEST_ROOT . DS . 'src' . DS . 'Logging' . DS . 'MetaProvider.php';
 
         // Every time the two above files are changed, the line numbers
         // may change, and so these two numbers may need adjustments
-        $firstFileFirstLine = 39;
-        $secondFileFirstLine = 39;
+        $firstFileFirstLine  = 46;
+        $secondFileFirstLine = 53;
 
         $filter = new Filter();
-        $filter->addFilesToWhitelist([$firstFile, $secondFile]);
-        $coverage1 = new CodeCoverage(null, $filter);
+        $filter->includeFiles([$firstFile, $secondFile]);
+
+        $data      = RawCodeCoverageData::fromXdebugWithoutPathCoverage([
+            $firstFile => [$firstFileFirstLine => 1],
+            $secondFile => [$secondFileFirstLine => 1],
+        ]);
+        $coverage1 = new CodeCoverage(Driver::forLineCoverage($filter), $filter);
         $coverage1->append(
-            [
-                $firstFile => [$firstFileFirstLine => 1],
-                $secondFile => [$secondFileFirstLine => 1],
-            ],
+            $data,
             'Test1'
         );
-        $coverage2 = new CodeCoverage(null, $filter);
+
+        $data      = RawCodeCoverageData::fromXdebugWithoutPathCoverage([
+            $firstFile => [$firstFileFirstLine => 1, 1 + $firstFileFirstLine => 1],
+        ]);
+        $coverage2 = new CodeCoverage(Driver::forLineCoverage($filter), $filter);
         $coverage2->append(
-            [
-                $firstFile => [$firstFileFirstLine => 1, 1 + $firstFileFirstLine => 1],
-            ],
+            $data,
             'Test2'
         );
 
@@ -104,11 +117,11 @@ class CoverageMergerTest extends \ParaTest\Tests\TestBase
         $this->call($merger, 'addCoverage', $coverage1);
         $this->call($merger, 'addCoverage', $coverage2);
 
-        /** @var CodeCoverage $coverage */
         $coverage = $this->getObjectValue($merger, 'coverage');
+        assert($coverage instanceof CodeCoverage);
 
         $this->assertInstanceOf(CodeCoverage::class, $coverage);
-        $data = $coverage->getData();
+        $data = $coverage->getData()->lineCoverage();
 
         $this->assertCount(1, $data[$firstFile][$firstFileFirstLine]);
         $this->assertCount(1, $data[$secondFile][$secondFileFirstLine]);

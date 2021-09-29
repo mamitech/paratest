@@ -8,38 +8,45 @@ use ParaTest\Console\Commands\ParaTestCommand;
 use ParaTest\Console\Testers\PHPUnit;
 use Symfony\Component\Console\Input\ArrayInput;
 
+use function array_key_exists;
+use function chdir;
+use function dirname;
+use function file_exists;
+use function sys_get_temp_dir;
+use function tempnam;
+use function unlink;
+
 class PHPUnitTest extends FunctionalTestBase
 {
-    public function testWithJustBootstrap()
+    public function testWithJustBootstrap(): void
     {
-        $this->assertTestsPassed($this->invokeParatest('passing-tests', [
-            'bootstrap' => BOOTSTRAP,
-        ]));
+        $this->assertTestsPassed($this->invokeParatest('passing-tests', ['bootstrap' => BOOTSTRAP]));
     }
 
-    public function testWithBootstrapThatDoesNotExist()
+    public function testWithBootstrapThatDoesNotExist(): void
     {
         $bootstrap = '/fileThatDoesNotExist.php';
-        $proc = $this->invokeParatest('passing-tests', ['bootstrap' => $bootstrap]);
-        $errors = $proc->getErrorOutput();
+        $proc      = $this->invokeParatest('passing-tests', ['bootstrap' => $bootstrap]);
+        $errors    = $proc->getErrorOutput();
         $this->assertEquals(1, $proc->getExitCode(), 'Unexpected exit code');
 
         // The [RuntimeException] message appears only on lower 6.x versions of Phpunit
-        $this->assertRegExp(
+        $this->assertMatchesRegularExpression(
             '/(\[RuntimeException\]|Bootstrap specified but could not be found)/',
             $errors,
             'Expected exception name not found in output'
         );
     }
 
-    public function testWithJustConfiguration()
+    public function testWithJustConfiguration(): void
     {
-        $this->assertTestsPassed($this->invokeParatest('passing-tests', [
-            'configuration' => PHPUNIT_CONFIGURATION,
-        ]));
+        $this->assertTestsPassed($this->invokeParatest('passing-tests', ['configuration' => PHPUNIT_CONFIGURATION]));
     }
 
-    public function testWithWrapperRunner()
+    /**
+     * @requires OSFAMILY Linux
+     */
+    public function testWithWrapperRunner(): void
     {
         $this->assertTestsPassed($this->invokeParatest('passing-tests', [
             'configuration' => PHPUNIT_CONFIGURATION,
@@ -47,7 +54,7 @@ class PHPUnitTest extends FunctionalTestBase
         ]));
     }
 
-    public function testWithSqliteRunner()
+    public function testWithSqliteRunner(): void
     {
         $this->guardSqliteExtensionLoaded();
 
@@ -57,7 +64,7 @@ class PHPUnitTest extends FunctionalTestBase
         ]));
     }
 
-    public function testWithCustomRunner()
+    public function testWithCustomRunner(): void
     {
         $cb = new ProcessCallback();
 
@@ -72,7 +79,7 @@ class PHPUnitTest extends FunctionalTestBase
         $this->assertEquals('EXECUTED', $cb->getBuffer());
     }
 
-    public function testWithColorsGreenBar()
+    public function testWithColorsGreenBar(): void
     {
         $proc = $this->invokeParatest(
             'paratest-only-tests/EnvironmentTest.php',
@@ -84,7 +91,7 @@ class PHPUnitTest extends FunctionalTestBase
         );
     }
 
-    public function testWithColorsRedBar()
+    public function testWithColorsRedBar(): void
     {
         $proc = $this->invokeParatest(
             'failing-tests/UnitTestWithErrorTest.php',
@@ -96,7 +103,7 @@ class PHPUnitTest extends FunctionalTestBase
         );
     }
 
-    public function testParatestEnvironmentVariable()
+    public function testParatestEnvironmentVariable(): void
     {
         $this->assertTestsPassed($this->invokeParatest(
             'paratest-only-tests/EnvironmentTest.php',
@@ -104,7 +111,10 @@ class PHPUnitTest extends FunctionalTestBase
         ));
     }
 
-    public function testParatestEnvironmentVariableWithWrapperRunner()
+    /**
+     * @requires OSFAMILY Linux
+     */
+    public function testParatestEnvironmentVariableWithWrapperRunner(): void
     {
         $this->assertTestsPassed($this->invokeParatest(
             'paratest-only-tests/EnvironmentTest.php',
@@ -112,16 +122,19 @@ class PHPUnitTest extends FunctionalTestBase
         ));
     }
 
-    public function testParatestEnvironmentVariableWithWrapperRunnerWithoutTestTokens()
+    /**
+     * @requires OSFAMILY Linux
+     */
+    public function testParatestEnvironmentVariableWithWrapperRunnerWithoutTestTokens(): void
     {
         $proc = $this->invokeParatest(
             'paratest-only-tests/EnvironmentTest.php',
             ['bootstrap' => BOOTSTRAP, 'runner' => 'WrapperRunner', 'no-test-tokens' => 0]
         );
-        $this->assertRegexp('/Failures: 1/', $proc->getOutput());
+        $this->assertMatchesRegularExpression('/Failures: 1/', $proc->getOutput());
     }
 
-    public function testParatestEnvironmentVariableWithSqliteRunner()
+    public function testParatestEnvironmentVariableWithSqliteRunner(): void
     {
         $this->guardSqliteExtensionLoaded();
         $this->assertTestsPassed($this->invokeParatest(
@@ -130,22 +143,22 @@ class PHPUnitTest extends FunctionalTestBase
         ));
     }
 
-    public function testWithConfigurationInDirWithoutConfigFile()
+    public function testWithConfigurationInDirWithoutConfigFile(): void
     {
         chdir(dirname(FIXTURES));
         $this->assertTestsPassed($this->invokeParatest('passing-tests'));
     }
 
-    public function testWithConfigurationThatDoesNotExist()
+    public function testWithConfigurationThatDoesNotExist(): void
     {
         $proc = $this->invokeParatest(
             'passing-tests',
             ['configuration' => FIXTURES . DS . 'phpunit.xml.disto']
         ); // dist"o" does not exist
-        $this->assertRegExp('/Could not read ".*phpunit.xml.disto"./', $proc->getOutput());
+        $this->assertMatchesRegularExpression('/Could not read ".*phpunit.xml.disto"./', $proc->getOutput());
     }
 
-    public function testFunctionalWithBootstrap()
+    public function testFunctionalWithBootstrap(): void
     {
         $this->assertTestsPassed($this->invokeParatest(
             'passing-tests',
@@ -153,7 +166,7 @@ class PHPUnitTest extends FunctionalTestBase
         ));
     }
 
-    public function testFunctionalWithConfiguration()
+    public function testFunctionalWithConfiguration(): void
     {
         $this->assertTestsPassed($this->invokeParatest(
             'passing-tests',
@@ -161,17 +174,17 @@ class PHPUnitTest extends FunctionalTestBase
         ));
     }
 
-    public function testWithBootstrapAndProcessesSwitch()
+    public function testWithBootstrapAndProcessesSwitch(): void
     {
         $proc = $this->invokeParatest(
             'passing-tests',
             ['bootstrap' => BOOTSTRAP, 'processes' => 6]
         );
-        $this->assertRegExp('/Running phpunit in 6 processes/', $proc->getOutput());
+        $this->assertMatchesRegularExpression('/Running phpunit in 6 processes/', $proc->getOutput());
         $this->assertTestsPassed($proc);
     }
 
-    public function testWithBootstrapAndManuallySpecifiedPHPUnit()
+    public function testWithBootstrapAndManuallySpecifiedPHPUnit(): void
     {
         $this->assertTestsPassed($this->invokeParatest(
             'passing-tests',
@@ -179,13 +192,13 @@ class PHPUnitTest extends FunctionalTestBase
         ));
     }
 
-    public function testDefaultSettingsWithoutBootstrap()
+    public function testDefaultSettingsWithoutBootstrap(): void
     {
         chdir(PARATEST_ROOT);
         $this->assertTestsPassed($this->invokeParatest('passing-tests'));
     }
 
-    public function testDefaultSettingsWithSpecifiedPath()
+    public function testDefaultSettingsWithSpecifiedPath(): void
     {
         chdir(PARATEST_ROOT);
         $this->assertTestsPassed($this->invokeParatest(
@@ -194,66 +207,62 @@ class PHPUnitTest extends FunctionalTestBase
         ));
     }
 
-    public function testLoggingXmlOfDirectory()
+    public function testLoggingXmlOfDirectory(): void
     {
         chdir(PARATEST_ROOT);
         $output = FIXTURES . DS . 'logs' . DS . 'functional-directory.xml';
-        $proc = $this->invokeParatest('passing-tests', [
-            'log-junit' => $output,
-        ]);
+        $proc   = $this->invokeParatest('passing-tests', ['log-junit' => $output]);
         $this->assertTestsPassed($proc);
         $this->assertFileExists($output);
-        if (file_exists($output)) {
-            unlink($output);
+        if (! file_exists($output)) {
+            return;
         }
+
+        unlink($output);
     }
 
-    public function testTestTokenEnvVarIsPassed()
+    public function testTestTokenEnvVarIsPassed(): void
     {
         chdir(PARATEST_ROOT);
         $proc = $this->invokeParatest(
             'passing-tests',
             ['path' => 'test/fixtures/paratest-only-tests/TestTokenTest.php']
         );
-        $this->assertTestsPassed($proc, 1, 1);
+        $this->assertTestsPassed($proc, '1', '1');
     }
 
-    public function testLoggingXmlOfSingleFile()
+    public function testLoggingXmlOfSingleFile(): void
     {
         chdir(PARATEST_ROOT);
         $output = FIXTURES . DS . 'logs' . DS . 'functional-file.xml';
-        $proc = $this->invokeParatest('passing-tests/GroupsTest.php', [
+        $proc   = $this->invokeParatest('passing-tests/GroupsTest.php', [
             'log-junit' => $output,
             'bootstrap' => BOOTSTRAP,
         ]);
-        $this->assertTestsPassed($proc, 5, 5);
+        $this->assertTestsPassed($proc, '5', '5');
         $this->assertFileExists($output);
-        if (file_exists($output)) {
-            unlink($output);
+        if (! file_exists($output)) {
+            return;
         }
+
+        unlink($output);
     }
 
-    public function testSuccessfulRunHasExitCode0()
+    public function testSuccessfulRunHasExitCode0(): void
     {
-        $proc = $this->invokeParatest('passing-tests/GroupsTest.php', [
-            'bootstrap' => BOOTSTRAP,
-        ]);
+        $proc = $this->invokeParatest('passing-tests/GroupsTest.php', ['bootstrap' => BOOTSTRAP]);
         $this->assertEquals(0, $proc->getExitCode());
     }
 
-    public function testFailedRunHasExitCode1()
+    public function testFailedRunHasExitCode1(): void
     {
-        $proc = $this->invokeParatest('failing-tests/FailingTest.php', [
-            'bootstrap' => BOOTSTRAP,
-        ]);
+        $proc = $this->invokeParatest('failing-tests/FailingTest.php', ['bootstrap' => BOOTSTRAP]);
         $this->assertEquals(1, $proc->getExitCode());
     }
 
-    public function testRunWithErrorsHasExitCode2()
+    public function testRunWithErrorsHasExitCode2(): void
     {
-        $proc = $this->invokeParatest('failing-tests/UnitTestWithErrorTest.php', [
-            'bootstrap' => BOOTSTRAP,
-        ]);
+        $proc = $this->invokeParatest('failing-tests/UnitTestWithErrorTest.php', ['bootstrap' => BOOTSTRAP]);
         $this->assertEquals(2, $proc->getExitCode());
     }
 
@@ -262,17 +271,15 @@ class PHPUnitTest extends FunctionalTestBase
      * running it. In some PHP/library versions, the exception code would be 255. Otherwise, the exception code was 0
      * and is manually converted to 1 inside the Symfony Console runner.
      */
-    public function testRunWithFatalParseErrorsHasExitCode255or1()
+    public function testRunWithFatalParseErrorsHasExitCode255or1(): void
     {
-        $proc = $this->invokeParatest('fatal-tests/UnitTestWithFatalParseErrorTest.php', [
-            'bootstrap' => BOOTSTRAP,
-        ]);
+        $proc = $this->invokeParatest('fatal-tests/UnitTestWithFatalParseErrorTest.php', ['bootstrap' => BOOTSTRAP]);
         $this->assertContains($proc->getExitCode(), [1, 255]);
     }
 
-    public function testStopOnFailurePreventsStartingFurtherTestsAfterFailure()
+    public function testStopOnFailurePreventsStartingFurtherTestsAfterFailure(): void
     {
-        $proc = $this->invokeParatest('failing-tests/StopOnFailureTest.php', [
+        $proc    = $this->invokeParatest('failing-tests/StopOnFailureTest.php', [
             'bootstrap' => BOOTSTRAP,
             'stop-on-failure' => '',
             'f' => '',
@@ -283,10 +290,10 @@ class PHPUnitTest extends FunctionalTestBase
         $this->assertStringContainsString('Failures: 1,', $results);  // The suite actually has 2 failing tests
     }
 
-    public function testFullyConfiguredRun()
+    public function testFullyConfiguredRun(): void
     {
         $output = FIXTURES . DS . 'logs' . DS . 'functional.xml';
-        $proc = $this->invokeParatest('passing-tests', [
+        $proc   = $this->invokeParatest('passing-tests', [
             'bootstrap' => BOOTSTRAP,
             'phpunit' => PHPUNIT,
             'f' => '',
@@ -295,15 +302,17 @@ class PHPUnitTest extends FunctionalTestBase
         ]);
         $this->assertTestsPassed($proc);
         $results = $proc->getOutput();
-        $this->assertRegExp('/Running phpunit in 6 processes/', $results);
-        $this->assertRegExp('/Functional mode is on/i', $results);
+        $this->assertMatchesRegularExpression('/Running phpunit in 6 processes/', $results);
+        $this->assertMatchesRegularExpression('/Functional mode is on/i', $results);
         $this->assertFileExists($output);
-        if (file_exists($output)) {
-            unlink($output);
+        if (! file_exists($output)) {
+            return;
         }
+
+        unlink($output);
     }
 
-    public function testUsingDefaultLoadedConfiguration()
+    public function testUsingDefaultLoadedConfiguration(): void
     {
         $this->assertTestsPassed($this->invokeParatest(
             'passing-tests',
@@ -311,34 +320,37 @@ class PHPUnitTest extends FunctionalTestBase
         ));
     }
 
-    public function testEachTestRunsExactlyOnceOnChainDependencyOnFunctionalMode()
+    public function testEachTestRunsExactlyOnceOnChainDependencyOnFunctionalMode(): void
     {
         $proc = $this->invokeParatest(
             'passing-tests/DependsOnChain.php',
             ['bootstrap' => BOOTSTRAP, 'functional']
         );
-        $this->assertTestsPassed($proc, 5, 5);
+        $this->assertTestsPassed($proc, '5', '5');
     }
 
-    public function testEachTestRunsExactlyOnceOnSameDependencyOnFunctionalMode()
+    public function testEachTestRunsExactlyOnceOnSameDependencyOnFunctionalMode(): void
     {
         $proc = $this->invokeParatest(
             'passing-tests/DependsOnSame.php',
             ['bootstrap' => BOOTSTRAP, 'functional']
         );
-        $this->assertTestsPassed($proc, 3, 3);
+        $this->assertTestsPassed($proc, '3', '3');
     }
 
-    public function testFunctionalModeEachTestCalledOnce()
+    public function testFunctionalModeEachTestCalledOnce(): void
     {
         $proc = $this->invokeParatest(
             'passing-tests/FunctionalModeEachTestCalledOnce.php',
             ['bootstrap' => BOOTSTRAP, 'functional']
         );
-        $this->assertTestsPassed($proc, 2, 2);
+        $this->assertTestsPassed($proc, '2', '2');
     }
 
-    public function setsCoveragePhpDataProvider()
+    /**
+     * @return array<int, array<int, string|array<string, string>>>
+     */
+    public function setsCoveragePhpDataProvider(): array
     {
         return [
             [
@@ -361,20 +373,20 @@ class PHPUnitTest extends FunctionalTestBase
     }
 
     /**
-     * @dataProvider setsCoveragePhpDataProvider
+     * @param array<string, string> $options
      *
-     * @param $options
-     * @param $coveragePhp
+     * @dataProvider setsCoveragePhpDataProvider
      */
-    public function testSetsCoveragePhp($options, $coveragePhp)
+    public function testSetsCoveragePhp(array $options, string $coveragePhp): void
     {
-        $phpUnit = new \ParaTest\Console\Testers\PHPUnit();
-        $c = new \ParaTest\Console\Commands\ParaTestCommand($phpUnit);
+        $phpUnit = new PHPUnit();
+        $c       = new ParaTestCommand($phpUnit);
 
-        $input = new \Symfony\Component\Console\Input\ArrayInput([], $c->getDefinition());
+        $input = new ArrayInput([], $c->getDefinition());
         foreach ($options as $key => $value) {
             $input->setOption($key, $value);
         }
+
         $input->setArgument('path', '.');
         $options = $phpUnit->getRunnerOptions($input);
 
@@ -387,16 +399,16 @@ class PHPUnitTest extends FunctionalTestBase
     }
 
     /**
-     * @dataProvider getRunnerOptionsDataProvider
+     * @param array<string, array<string, int|string>> $options
+     * @param array<string, array<string, int|string>> $expected
      *
-     * @param array $options
-     * @param array $expected
+     * @dataProvider getRunnerOptionsDataProvider
      */
-    public function testGetRunnerOptions(array $options, array $expected)
+    public function testGetRunnerOptions(array $options, array $expected): void
     {
         $phpUnit = new PHPUnit();
-        $c = new ParaTestCommand($phpUnit);
-        $input = new ArrayInput($options, $c->getDefinition());
+        $c       = new ParaTestCommand($phpUnit);
+        $input   = new ArrayInput($options, $c->getDefinition());
 
         $options = $phpUnit->getRunnerOptions($input);
 
@@ -411,7 +423,10 @@ class PHPUnitTest extends FunctionalTestBase
         $this->assertEquals($expected, $options);
     }
 
-    public function getRunnerOptionsDataProvider()
+    /**
+     * @return array<string, array<string, array<string, array<int, string>|int|string>>>
+     */
+    public function getRunnerOptionsDataProvider(): array
     {
         return [
             'default' => [
