@@ -5,41 +5,34 @@ declare(strict_types=1);
 namespace ParaTest\Runners\PHPUnit;
 
 use ParaTest\Coverage\CoverageMerger;
+use ParaTest\Coverage\CoverageReporter;
 use ParaTest\Logging\JUnit\Writer;
 use ParaTest\Logging\LogInterpreter;
+use SebastianBergmann\Timer\Timer;
+use Symfony\Component\Console\Output\OutputInterface;
 
-abstract class BaseRunner
+use function array_merge;
+use function assert;
+use function sprintf;
+
+/**
+ * @internal
+ */
+abstract class BaseRunner implements RunnerInterface
 {
-    /**
-     * @var Options
-     */
+    /** @var Options */
     protected $options;
 
-    /**
-     * @var \ParaTest\Logging\LogInterpreter
-     */
-    protected $interpreter;
-
-    /**
-     * @var ResultPrinter
-     */
+    /** @var ResultPrinter */
     protected $printer;
 
     /**
      * A collection of pending ExecutableTest objects that have
      * yet to run.
      *
-     * @var ExecutableTest[]
+     * @var array<int|string, ExecutableTest>
      */
     protected $pending = [];
-
-    /**
-     * A collection of ExecutableTest objects that have processes
-     * currently running.
-     *
-     * @var array|ExecutableTest[]
-     */
-    protected $running = [];
 
     /**
      * A tallied exit code that returns the highest exit
@@ -49,40 +42,44 @@ abstract class BaseRunner
      */
     protected $exitcode = -1;
 
+    /** @var OutputInterface */
+    protected $output;
+
+    /** @var LogInterpreter */
+    private $interpreter;
+
     /**
      * CoverageMerger to hold track of the accumulated coverage.
      *
-     * @var CoverageMerger
+     * @var CoverageMerger|null
      */
-    protected $coverage = null;
+    private $coverage = null;
 
-    public function __construct(array $opts = [])
+    public function __construct(Options $options, OutputInterface $output)
     {
-        $this->options = new Options($opts);
+        $this->options     = $options;
+        $this->output      = $output;
         $this->interpreter = new LogInterpreter();
-        $this->printer = new ResultPrinter($this->interpreter);
-    }
+        $this->printer     = new ResultPrinter($this->interpreter, $output, $options);
 
-    public function run()
-    {
-        $this->initialize();
-    }
-
-    /**
-     * Ensures a valid configuration was supplied. If not
-     * causes ParaTest to print the error message and exit immediately
-     * with an exit code of 1.
-     */
-    protected function verifyConfiguration()
-    {
-        if (
-            isset($this->options->filtered['configuration']) &&
-            !\file_exists($this->options->filtered['configuration']->getPath())
-        ) {
-            $this->printer->println(\sprintf('Could not read "%s".', $this->options->filtered['configuration']));
-            exit(1);
+        if (! $this->options->hasCoverage()) {
+            return;
         }
+
+        $this->coverage = new CoverageMerger($this->options->coverageTestLimit());
     }
+
+    final public function run(): void
+    {
+        $this->load(new SuiteLoader($this->options, $this->output));
+        $this->printer->start();
+
+        $this->doRun();
+
+        $this->complete();
+    }
+
+    abstract protected function doRun(): void;
 
     /**
      * Builds the collection of pending ExecutableTest objects
@@ -90,23 +87,41 @@ abstract class BaseRunner
      * contain a collection of TestMethod objects instead of Suite
      * objects.
      */
-    protected function load(SuiteLoader $loader)
+    private function load(SuiteLoader $loader): void
     {
-        $loader->load($this->options->path);
-        $executables = $this->options->functional ? $loader->getTestMethods() : $loader->getSuites();
-        $this->pending = \array_merge($this->pending, $executables);
+        $this->beforeLoadChecks();
+        $loader->load();
+        $executables   = $this->options->functional() ? $loader->getTestMethods() : $loader->getSuites();
+        $this->pending = array_merge($this->pending, $executables);
         foreach ($this->pending as $pending) {
             $this->printer->addTest($pending);
+        }
+    }
+
+    abstract protected function beforeLoadChecks(): void;
+
+    /**
+     * Finalizes the run process. This method
+     * prints all results, rewinds the log interpreter,
+     * logs any results to JUnit, and cleans up temporary
+     * files.
+     */
+    private function complete(): void
+    {
+        $this->printer->printResults();
+        $this->log();
+        $this->logCoverage();
+        $readers = $this->interpreter->getReaders();
+        foreach ($readers as $reader) {
+            $reader->removeLog();
         }
     }
 
     /**
      * Returns the highest exit code encountered
      * throughout the course of test execution.
-     *
-     * @return int
      */
-    public function getExitCode(): int
+    final public function getExitCode(): int
     {
         return $this->exitcode;
     }
@@ -114,100 +129,79 @@ abstract class BaseRunner
     /**
      * Write output to JUnit format if requested.
      */
-    protected function log()
+    final protected function log(): void
     {
-        if (!isset($this->options->filtered['log-junit'])) {
+        if (($logJunit = $this->options->logJunit()) === null) {
             return;
         }
-        $output = $this->options->filtered['log-junit'];
-        $writer = new Writer($this->interpreter, $this->options->path);
-        $writer->write($output);
+
+        $name = $this->options->path() ?? '';
+
+        $writer = new Writer($this->interpreter, $name);
+        $writer->write($logJunit);
     }
 
     /**
      * Write coverage to file if requested.
      */
-    protected function logCoverage()
+    final protected function logCoverage(): void
     {
-        if (!$this->hasCoverage()) {
+        if (! $this->hasCoverage()) {
             return;
         }
 
-        $filteredOptions = $this->options->filtered;
-
-        $reporter = $this->getCoverage()->getReporter();
-
-        if (isset($filteredOptions['coverage-clover'])) {
-            $reporter->clover($filteredOptions['coverage-clover']);
+        $coverageMerger = $this->getCoverage();
+        assert($coverageMerger !== null);
+        $codeCoverage = $coverageMerger->getCodeCoverageObject();
+        assert($codeCoverage !== null);
+        $codeCoverageConfiguration = null;
+        if (($configuration = $this->options->configuration()) !== null) {
+            $codeCoverageConfiguration = $configuration->codeCoverage();
         }
 
-        if (isset($filteredOptions['coverage-crap4j'])) {
-            $reporter->crap4j($filteredOptions['coverage-crap4j']);
+        $reporter = new CoverageReporter($codeCoverage, $codeCoverageConfiguration);
+
+        $this->output->write('Generating code coverage report ... ');
+
+        $timer = new Timer();
+        $timer->start();
+
+        if (($coverageClover = $this->options->coverageClover()) !== null) {
+            $reporter->clover($coverageClover);
         }
 
-        if (isset($filteredOptions['coverage-html'])) {
-            $reporter->html($filteredOptions['coverage-html']);
+        if (($coverageCrap4j = $this->options->coverageCrap4j()) !== null) {
+            $reporter->crap4j($coverageCrap4j);
         }
 
-        if (isset($filteredOptions['coverage-text'])) {
-            $reporter->text();
+        if (($coverageHtml = $this->options->coverageHtml()) !== null) {
+            $reporter->html($coverageHtml);
         }
 
-        if (isset($filteredOptions['coverage-xml'])) {
-            $reporter->xml($filteredOptions['coverage-xml']);
+        if ($this->options->coverageText()) {
+            $this->output->write($reporter->text());
         }
 
-        $reporter->php($filteredOptions['coverage-php']);
+        if (($coverageXml = $this->options->coverageXml()) !== null) {
+            $reporter->xml($coverageXml);
+        }
+
+        if (($coveragePhp = $this->options->coveragePhp()) !== null) {
+            $reporter->php($coveragePhp);
+        }
+
+        $this->output->writeln(
+            sprintf('done [%s]', $timer->stop()->asString())
+        );
     }
 
-    protected function initCoverage()
+    final protected function hasCoverage(): bool
     {
-        if (!isset($this->options->filtered['coverage-php'])) {
-            return;
-        }
-        $this->coverage = new CoverageMerger((int)$this->options->coverageTestLimit);
+        return $this->options->hasCoverage();
     }
 
-    /**
-     * @return bool
-     */
-    protected function hasCoverage(): bool
-    {
-        return $this->getCoverage() !== null;
-    }
-
-    /**
-     * @return CoverageMerger|null
-     */
-    protected function getCoverage()
+    final protected function getCoverage(): ?CoverageMerger
     {
         return $this->coverage;
-    }
-
-    /**
-     * Overrides envirenment variables if needed.
-     */
-    protected function overrideEnvironmentVariables()
-    {
-        if (!isset($this->options->filtered['configuration'])) {
-            return;
-        }
-
-        $variables = $this->options->filtered['configuration']->getEnvironmentVariables();
-
-        foreach ($variables as $key => $value) {
-            \putenv(\sprintf('%s=%s', $key, getenv($key, true) ?: $value));
-
-            $_ENV[$key] = getenv($key, true) ?: $value;
-        }
-    }
-
-    protected function initialize(): void
-    {
-        $this->verifyConfiguration();
-        $this->overrideEnvironmentVariables();
-        $this->initCoverage();
-        $this->load(new SuiteLoader($this->options));
-        $this->printer->start($this->options);
     }
 }

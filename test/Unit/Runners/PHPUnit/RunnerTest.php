@@ -4,101 +4,137 @@ declare(strict_types=1);
 
 namespace ParaTest\Tests\Unit\Runners\PHPUnit;
 
-use ParaTest\Logging\LogInterpreter;
-use ParaTest\Runners\PHPUnit\Configuration;
-use ParaTest\Runners\PHPUnit\ResultPrinter;
-use ParaTest\Runners\PHPUnit\Runner;
-
-class RunnerTest extends \ParaTest\Tests\TestBase
+/**
+ * @internal
+ *
+ * @covers \ParaTest\Runners\PHPUnit\BaseRunner
+ * @covers \ParaTest\Runners\PHPUnit\Runner
+ * @covers \ParaTest\Runners\PHPUnit\Worker\RunnerWorker
+ */
+final class RunnerTest extends RunnerTestCase
 {
-    protected $runner;
-    protected $files;
-    protected $testDir;
-
-    public function setUp(): void
+    public function testFunctionalMode(): void
     {
-        $this->runner = new Runner();
+        $this->bareOptions['--path']           = $this->fixture('dataprovider_tests' . DS . 'DataProviderTest.php');
+        $this->bareOptions['--functional']     = true;
+        $this->bareOptions['--max-batch-size'] = 50;
+
+        $this->assertTestsPassed($this->runRunner(), '1150', '1150');
     }
 
-    public function testConstructor()
+    public function testNumericDataSetInFunctionalModeWithMethodFilter(): void
     {
-        $opts = ['processes' => 4, 'path' => FIXTURES . DS . 'tests', 'bootstrap' => 'hello', 'functional' => true];
-        $runner = new Runner($opts);
-        $options = $this->getObjectValue($runner, 'options');
+        $this->bareOptions['--path']           = $this->fixture('dataprovider_tests' . DS . 'DataProviderTest.php');
+        $this->bareOptions['--functional']     = true;
+        $this->bareOptions['--max-batch-size'] = 50;
+        $this->bareOptions['--filter']         = 'testNumericDataProvider50';
 
-        $this->assertEquals(4, $options->processes);
-        $this->assertEquals(FIXTURES . DS . 'tests', $options->path);
-        $this->assertEquals([], $this->getObjectValue($runner, 'pending'));
-        $this->assertEquals([], $this->getObjectValue($runner, 'running'));
-        $this->assertEquals(-1, $this->getObjectValue($runner, 'exitcode'));
-        $this->assertTrue($options->functional);
-        //filter out processes and path and phpunit
-        $config = new Configuration(getcwd() . DS . 'phpunit.xml.dist');
-        $this->assertEquals(['bootstrap' => 'hello', 'configuration' => $config], $options->filtered);
-        $this->assertInstanceOf(LogInterpreter::class, $this->getObjectValue($runner, 'interpreter'));
-        $this->assertInstanceOf(ResultPrinter::class, $this->getObjectValue($runner, 'printer'));
+        $this->assertTestsPassed($this->runRunner(), '50', '50');
     }
 
-    public function testGetExitCode()
+    public function testNumericDataSetInFunctionalModeWithCustomFilter(): void
     {
-        $this->assertEquals(-1, $this->runner->getExitCode());
+        $this->bareOptions['--path']           = $this->fixture('dataprovider_tests' . DS . 'DataProviderTest.php');
+        $this->bareOptions['--functional']     = true;
+        $this->bareOptions['--max-batch-size'] = 50;
+        $this->bareOptions['--filter']         = 'testNumericDataProvider50.*1';
+
+        $this->assertTestsPassed($this->runRunner(), '14', '14');
     }
 
-    public function testConstructorAssignsTokens()
+    public function testNamedDataSetInFunctionalModeWithMethodFilter(): void
     {
-        $opts = ['processes' => 4, 'path' => FIXTURES . DS . 'tests', 'bootstrap' => 'hello', 'functional' => true];
-        $runner = new Runner($opts);
-        $tokens = $this->getObjectValue($runner, 'tokens');
-        $this->assertCount(4, $tokens);
+        $this->bareOptions['--path']           = $this->fixture('dataprovider_tests' . DS . 'DataProviderTest.php');
+        $this->bareOptions['--functional']     = true;
+        $this->bareOptions['--max-batch-size'] = 50;
+        $this->bareOptions['--filter']         = 'testNamedDataProvider50';
+
+        $this->assertTestsPassed($this->runRunner(), '50', '50');
     }
 
-    public function testGetsNextAvailableTokenReturnsTokenIdentifier()
+    public function testNamedDataSetInFunctionalModeWithCustomFilter(): void
     {
-        $tokens = [
-            0 => ['token' => 0, 'unique' => uniqid(), 'available' => false],
-            1 => ['token' => 1, 'unique' => uniqid(), 'available' => false],
-            2 => ['token' => 2, 'unique' => uniqid(), 'available' => true],
-            3 => ['token' => 3, 'unique' => uniqid(), 'available' => false],
-        ];
-        $opts = ['processes' => 4, 'path' => FIXTURES . DS . 'tests', 'bootstrap' => 'hello', 'functional' => true];
-        $runner = new Runner($opts);
-        $this->setObjectValue($runner, 'tokens', $tokens);
+        $this->bareOptions['--path']           = $this->fixture('dataprovider_tests' . DS . 'DataProviderTest.php');
+        $this->bareOptions['--functional']     = true;
+        $this->bareOptions['--max-batch-size'] = 50;
+        $this->bareOptions['--filter']         = 'testNamedDataProvider50.*name_of_test_.*1';
 
-        $tokenData = $this->call($runner, 'getNextAvailableToken');
-        $this->assertEquals(2, $tokenData['token']);
+        $this->assertTestsPassed($this->runRunner(), '14', '14');
     }
 
-    public function testGetNextAvailableTokenReturnsFalseWhenNoTokensAreAvailable()
+    public function testNumericDataSet1000InFunctionalModeWithFilterAndMaxBatchSize(): void
     {
-        $tokens = [
-            0 => ['token' => 0, 'unique' => uniqid(), 'available' => false],
-            1 => ['token' => 1, 'unique' => uniqid(), 'available' => false],
-            2 => ['token' => 2, 'unique' => uniqid(), 'available' => false],
-            3 => ['token' => 3, 'unique' => uniqid(), 'available' => false],
-        ];
-        $opts = ['processes' => 4, 'path' => FIXTURES . DS . 'tests', 'bootstrap' => 'hello', 'functional' => true];
-        $runner = new Runner($opts);
-        $this->setObjectValue($runner, 'tokens', $tokens);
+        $this->bareOptions['--path']           = $this->fixture('dataprovider_tests' . DS . 'DataProviderTest.php');
+        $this->bareOptions['--functional']     = true;
+        $this->bareOptions['--max-batch-size'] = 50;
+        $this->bareOptions['--filter']         = 'testNumericDataProvider1000';
 
-        $tokenData = $this->call($runner, 'getNextAvailableToken');
-        $this->assertFalse($tokenData);
+        $this->assertTestsPassed($this->runRunner(), '1000', '1000');
     }
 
-    public function testReleaseTokenMakesTokenAvailable()
+    public function testSkippedInFunctionalMode(): void
     {
-        $tokens = [
-            0 => ['token' => 0, 'unique' => uniqid(), 'available' => false],
-            1 => ['token' => 1, 'unique' => uniqid(), 'available' => false],
-            2 => ['token' => 2, 'unique' => uniqid(), 'available' => false],
-            3 => ['token' => 3, 'unique' => uniqid(), 'available' => false],
-        ];
-        $opts = ['processes' => 4, 'path' => FIXTURES . DS . 'tests', 'bootstrap' => 'hello', 'functional' => true];
-        $runner = new Runner($opts);
-        $this->setObjectValue($runner, 'tokens', $tokens);
+        $this->bareOptions['--path']       = $this->fixture('skipped_tests' . DS . 'SkippedOrIncompleteTest.php');
+        $this->bareOptions['--functional'] = true;
+        $this->bareOptions['--filter']     = 'testSkipped';
 
-        $this->assertFalse($tokens[1]['available']);
-        $this->call($runner, 'releaseToken', 1);
-        $tokens = $this->getObjectValue($runner, 'tokens');
-        $this->assertTrue($tokens[1]['available']);
+        $runnerResult = $this->runRunner();
+
+        $expected = "OK, but incomplete, skipped, or risky tests!\n"
+            . 'Tests: 1, Assertions: 0, Skipped: 1.';
+        static::assertStringContainsString($expected, $runnerResult->getOutput());
+        $this->assertContainsNSkippedTests(1, $runnerResult->getOutput());
+    }
+
+    public function testIncompleteInFunctionalMode(): void
+    {
+        $this->bareOptions['--path']       = $this->fixture('skipped_tests' . DS . 'SkippedOrIncompleteTest.php');
+        $this->bareOptions['--functional'] = true;
+        $this->bareOptions['--filter']     = 'testIncomplete';
+
+        $runnerResult = $this->runRunner();
+
+        $expected = "OK, but incomplete, skipped, or risky tests!\n"
+            . 'Tests: 1, Assertions: 0, Skipped: 1.';
+        static::assertStringContainsString($expected, $runnerResult->getOutput());
+        $this->assertContainsNSkippedTests(1, $runnerResult->getOutput());
+    }
+
+    public function testDataProviderWithSkippedInFunctionalMode(): void
+    {
+        $this->bareOptions['--path']       = $this->fixture('skipped_tests' . DS . 'SkippedOrIncompleteTest.php');
+        $this->bareOptions['--functional'] = true;
+        $this->bareOptions['--filter']     = 'testDataProviderWithSkipped';
+
+        $runnerResult = $this->runRunner();
+
+        $expected = "OK, but incomplete, skipped, or risky tests!\n"
+            . 'Tests: 100, Assertions: 33, Skipped: 67.';
+        static::assertStringContainsString($expected, $runnerResult->getOutput());
+        $this->assertContainsNSkippedTests(67, $runnerResult->getOutput());
+    }
+
+    public function testEachTestRunsExactlyOnceOnChainDependencyOnFunctionalMode(): void
+    {
+        $this->bareOptions['--path']       = $this->fixture('passing_tests' . DS . 'DependsOnChain.php');
+        $this->bareOptions['--functional'] = true;
+
+        $this->assertTestsPassed($this->runRunner(), '5', '5');
+    }
+
+    public function testEachTestRunsExactlyOnceOnSameDependencyOnFunctionalMode(): void
+    {
+        $this->bareOptions['--path']       = $this->fixture('passing_tests' . DS . 'DependsOnSame.php');
+        $this->bareOptions['--functional'] = true;
+
+        $this->assertTestsPassed($this->runRunner(), '3', '3');
+    }
+
+    public function testFunctionalModeEachTestCalledOnce(): void
+    {
+        $this->bareOptions['--path']       = $this->fixture('passing_tests' . DS . 'FunctionalModeEachTestCalledOnce.php');
+        $this->bareOptions['--functional'] = true;
+
+        $this->assertTestsPassed($this->runRunner(), '2', '2');
     }
 }

@@ -1,10 +1,12 @@
 #!/usr/bin/env php
 <?php
 
+$cwd = getcwd();
+
 $files = array(
-    __DIR__ . '/../../vendor/autoload.php',
-    __DIR__ . '/../../../autoload.php',
-    dirname(__DIR__) . '/vendor/autoload.php'
+    dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'autoload.php',
+    dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php',
+    dirname(__DIR__) . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php'
 );
 
 $found = false;
@@ -31,11 +33,5 @@ if (false === in_array(PHP_SAPI, ['cli', 'phpdbg', 'embed'], true)) {
     exit(1);
 }
 
-#use ParaTest\UI\Text\PHPUnitTextUI;
-
-#PHPUnitTextUI::main();
-
-use ParaTest\Console\ParaTestApplication;
-
-$app = new ParaTestApplication();
-$app->run();
+assert(is_string($cwd));
+\ParaTest\Console\Commands\ParaTestCommand::applicationFactory($cwd)->run();

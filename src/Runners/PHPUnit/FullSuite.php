@@ -4,45 +4,31 @@ declare(strict_types=1);
 
 namespace ParaTest\Runners\PHPUnit;
 
-class FullSuite extends ExecutableTest
+use function array_merge;
+
+/**
+ * @internal
+ */
+final class FullSuite extends ExecutableTest
 {
-    /**
-     * @var string
-     */
-    protected $suiteName;
+    /** @var string */
+    private $suiteName;
 
-    /**
-     * @var string
-     */
-    protected $configPath;
-
-    /**
-     * @param string $suiteName
-     * @param string $configPath
-     */
-    public function __construct($suiteName, $configPath)
+    public function __construct(string $suiteName, bool $needsCoverage, string $tmpDir)
     {
-        parent::__construct('');
+        parent::__construct('', $needsCoverage, $tmpDir);
 
         $this->suiteName = $suiteName;
-        $this->configPath = $configPath;
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritDoc
      */
-    protected function getCommandString(string $binary, array $options = [], ?string $passthru = null)
+    protected function prepareOptions(array $options): array
     {
-        return parent::getCommandString(
-            $binary,
-            \array_merge(
-                $options,
-                [
-                    'configuration' => $this->configPath,
-                    'testsuite' => $this->suiteName,
-                ]
-            ),
-            $passthru
+        return array_merge(
+            $options,
+            ['testsuite' => $this->suiteName]
         );
     }
 

@@ -4,180 +4,127 @@ declare(strict_types=1);
 
 namespace ParaTest\Tests;
 
-use Exception;
+use InvalidArgumentException;
+use ParaTest\Runners\PHPUnit\Options;
+use ParaTest\Runners\PHPUnit\Runner;
+use ParaTest\Runners\PHPUnit\RunnerInterface;
 use PHPUnit;
-use PHPUnit\Runner\Version;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
-use ReflectionClass;
+use PHPUnit\Framework\SkippedTestError;
+use ReflectionObject;
 use SebastianBergmann\Environment\Runtime;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Input\InputDefinition;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Filesystem\Filesystem;
 
-class TestBase extends PHPUnit\Framework\TestCase
+use function file_exists;
+use function glob;
+use function sprintf;
+
+abstract class TestBase extends PHPUnit\Framework\TestCase
 {
-    /**
-     * Get PHPUnit version.
-     *
-     * @return string
-     */
-    protected static function getPhpUnitVersion()
+    /** @var class-string<RunnerInterface> */
+    protected $runnerClass = Runner::class;
+    /** @var array<string, string|bool|int> */
+    protected $bareOptions = [];
+
+    final protected function setUp(): void
     {
-        return Version::id();
+        $glob = glob(TMP_DIR . DS . '*');
+        static::assertNotFalse($glob);
+
+        (new Filesystem())->remove($glob);
+
+        $this->setUpTest();
     }
 
-    protected function fixture($fixture)
+    protected function setUpTest(): void
+    {
+    }
+
+    /**
+     * @param array<string, string|bool|int> $argv
+     */
+    final protected function createOptionsFromArgv(array $argv, ?string $cwd = null): Options
+    {
+        $inputDefinition = new InputDefinition();
+        Options::setInputDefinition($inputDefinition);
+
+        if (! isset($argv['--processes'])) {
+            $argv['--processes'] = PROCESSES_FOR_TESTS;
+        }
+
+        if (! isset($argv['--tmp-dir'])) {
+            $argv['--tmp-dir'] = TMP_DIR;
+        }
+
+        $input = new ArrayInput($argv, $inputDefinition);
+
+        return Options::fromConsoleInput($input, $cwd ?? __DIR__);
+    }
+
+    final protected function runRunner(?string $cwd = null): RunnerResult
+    {
+        $output        = new BufferedOutput();
+        $runnerClass   = $this->runnerClass;
+        $wrapperRunner = new $runnerClass($this->createOptionsFromArgv($this->bareOptions, $cwd), $output);
+        $wrapperRunner->run();
+
+        return new RunnerResult($wrapperRunner->getExitCode(), $output->fetch());
+    }
+
+    final protected function assertTestsPassed(
+        RunnerResult $proc,
+        ?string $testPattern = null,
+        ?string $assertionPattern = null
+    ): void {
+        static::assertMatchesRegularExpression(
+            sprintf(
+                '/OK \(%s tests?, %s assertions?\)/',
+                $testPattern ?? '\d+',
+                $assertionPattern ?? '\d+'
+            ),
+            $proc->getOutput(),
+        );
+        static::assertEquals(0, $proc->getExitCode());
+    }
+
+    final protected function fixture(string $fixture): string
     {
         $fixture = FIXTURES . DS . $fixture;
-        if (!file_exists($fixture)) {
-            throw new Exception("Fixture $fixture not found");
+        if (! file_exists($fixture)) {
+            throw new InvalidArgumentException("Fixture {$fixture} not found");
         }
 
         return $fixture;
     }
 
-    protected function findTests($dir)
+    /**
+     * @return mixed
+     */
+    final protected function getObjectValue(object $object, string $property)
     {
-        $it = new \RecursiveDirectoryIterator($dir, \RecursiveIteratorIterator::SELF_FIRST);
-        $it = new \RecursiveIteratorIterator($it);
-        $files = [];
-        foreach ($it as $file) {
-            if (preg_match('/Test\.php$/', $file->getPathname())) {
-                $files[] = $file->getPathname();
-            }
-        }
-
-        return $files;
-    }
-
-    protected function getObjectValue($object, $property)
-    {
-        $prop = $this->getAccessibleProperty($object, $property);
+        $refl = new ReflectionObject($object);
+        $prop = $refl->getProperty($property);
+        $prop->setAccessible(true);
 
         return $prop->getValue($object);
     }
 
-    protected function setObjectValue($object, $property, $value)
-    {
-        $prop = $this->getAccessibleProperty($object, $property);
-
-        return $prop->setValue($object, $value);
-    }
-
-    private function getAccessibleProperty($object, $property)
-    {
-        $refl = new \ReflectionObject($object);
-        $prop = $refl->getProperty($property);
-        $prop->setAccessible(true);
-
-        return $prop;
-    }
-
     /**
-     * Calls an object method even if it is protected or private.
-     *
-     * @param object $object the object to call a method on
-     * @param string $methodName the method name to be called
-     * @param mixed $args 0 or more arguments passed in the function
-     *
-     * @return mixed returns what the object's method call will return
+     * @throws SkippedTestError When code coverage library is not found.
      */
-    public function call($object, $methodName, ...$args)
-    {
-        return self::callMethod($object, $methodName, $args);
-    }
-
-    /**
-     * Calls a class method even if it is protected or private.
-     *
-     * @param string $class the class to call a method on
-     * @param string $methodName the method name to be called
-     * @param mixed $args 0 or more arguments passed in the function
-     *
-     * @return mixed returns what the object's method call will return
-     */
-    public function callStatic($class, $methodName, ...$args)
-    {
-        return self::callMethod($class, $methodName, $args);
-    }
-
-    protected static function callMethod($objectOrClassName, $methodName, $args = null)
-    {
-        $isStatic = is_string($objectOrClassName);
-
-        if (!$isStatic) {
-            if (!is_object($objectOrClassName)) {
-                throw new Exception('Method call on non existent object or class');
-            }
-        }
-
-        $class = $isStatic ? $objectOrClassName : get_class($objectOrClassName);
-        $object = $isStatic ? null : $objectOrClassName;
-
-        $reflectionClass = new ReflectionClass($class);
-        $method = $reflectionClass->getMethod($methodName);
-        $method->setAccessible(true);
-
-        return $method->invokeArgs($object, $args);
-    }
-
-    /**
-     * @throws \PHPUnit\Framework\SkippedTestError When code coverage library is not found
-     */
-    protected static function skipIfCodeCoverageNotEnabled()
+    final protected static function skipIfCodeCoverageNotEnabled(): void
     {
         static $runtime;
-        if (null === $runtime) {
+        if ($runtime === null) {
             $runtime = new Runtime();
         }
 
-        if (!$runtime->canCollectCodeCoverage()) {
-            static::markTestSkipped('No code coverage driver available');
-        }
-    }
-
-    /**
-     * Remove dir and its files.
-     *
-     * @param string $dirname
-     */
-    protected function removeDirectory($dirname)
-    {
-        if (!file_exists($dirname) || !is_dir($dirname)) {
+        if ($runtime->canCollectCodeCoverage()) {
             return;
         }
 
-        $directory = new \RecursiveDirectoryIterator(
-            $dirname,
-            RecursiveDirectoryIterator::SKIP_DOTS
-        );
-        /** @var \SplFileObject[] $iterator */
-        $iterator = new \RecursiveIteratorIterator(
-            $directory,
-            RecursiveIteratorIterator::CHILD_FIRST
-        );
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getRealPath());
-            } else {
-                unlink($file->getRealPath());
-            }
-        }
-        rmdir($dirname);
-    }
-
-    /**
-     * Copy fixture file to tmp folder, cause coverage file will be deleted by merger.
-     *
-     * @param string $fixture Fixture coverage file name
-     * @param string $directory
-     *
-     * @return string Copied coverage file
-     */
-    protected function copyCoverageFile($fixture, $directory = '/tmp')
-    {
-        $fixturePath = $this->fixture($fixture);
-        $filename = str_replace('.', '_', uniqid($directory . '/cov-', true));
-        copy($fixturePath, $filename);
-
-        return $filename;
+        static::markTestSkipped('No code coverage driver available');
     }
 }

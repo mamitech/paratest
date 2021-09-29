@@ -4,117 +4,80 @@ declare(strict_types=1);
 
 namespace ParaTest\Logging\JUnit;
 
+use PHPUnit\Framework\RiskyTestError;
+use SimpleXMLElement;
+
+use function assert;
+use function class_exists;
+use function is_subclass_of;
+use function iterator_to_array;
+use function trim;
+
 /**
- * Class TestCase.
- *
  * A simple data structure for tracking
  * the results of a testcase node in a
  * JUnit xml document
+ *
+ * @internal
  */
-class TestCase
+final class TestCase
 {
-    /**
-     * @var string
-     */
+    /** @var string */
     public $name;
 
-    /**
-     * @var string
-     */
+    /** @var string */
     public $class;
 
-    /**
-     * @var string
-     */
+    /** @var string */
     public $file;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     public $line;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     public $assertions;
 
-    /**
-     * @var string|float (a stringified float, from phpunit XML output)
-     */
+    /** @var float */
     public $time;
 
-    /**
-     * List of failures in this test case.
-     *
-     * @var array
-     */
-    public $failures = [];
-
-    /**
-     * List of errors in this test case.
-     *
-     * @var array
-     */
+    /** @var array<int, array{type: string, text: string}> */
     public $errors = [];
 
-    /**
-     * List of warnings in this test case.
-     *
-     * @var array
-     */
+    /** @var array<int, array{type: string, text: string}> */
+    public $failures = [];
+
+    /** @var array<int, array{type: string, text: string}> */
     public $warnings = [];
 
-    /** @var array */
+    /** @var array<int, array{type: string, text: string}> */
     public $skipped = [];
 
-    /**
-     * @param string $name
-     * @param string $class
-     * @param string $file
-     * @param int    $line
-     * @param int    $assertions
-     * @param string $time
-     */
+    /** @var array<int, array{type: string, text: string}> */
+    public $risky = [];
+
     public function __construct(
         string $name,
         string $class,
         string $file,
         int $line,
         int $assertions,
-        string $time
+        float $time
     ) {
-        $this->name = $name;
-        $this->class = $class;
-        $this->file = $file;
-        $this->line = $line;
+        $this->name       = $name;
+        $this->class      = $class;
+        $this->file       = $file;
+        $this->line       = $line;
         $this->assertions = $assertions;
-        $this->time = $time;
-    }
-
-    /**
-     * Add a defect type (error or failure).
-     *
-     * @param string $collName the name of the collection to add to
-     * @param $type
-     * @param $text
-     */
-    protected function addDefect(string $collName, string $type, string $text)
-    {
-        $this->{$collName}[] = [
-            'type' => $type,
-            'text' => \trim($text),
-        ];
+        $this->time       = $time;
     }
 
     /**
      * Factory method that creates a TestCase object
      * from a SimpleXMLElement.
      *
-     * @param \SimpleXMLElement $node
-     *
      * @return TestCase
      */
-    public static function caseFromNode(\SimpleXMLElement $node): self
+    public static function caseFromNode(SimpleXMLElement $node): self
     {
         $case = new self(
             (string) $node['name'],
@@ -122,22 +85,49 @@ class TestCase
             (string) $node['file'],
             (int) $node['line'],
             (int) $node['assertions'],
-            (string) $node['time']
+            (float) $node['time']
         );
 
         $system_output = $node->{'system-out'};
+
+        /** @var SimpleXMLElement[] $errors */
+        $errors = (array) $node->xpath('error');
+        $risky  = [];
+        foreach ($errors as $index => $error) {
+            $attributes = $error->attributes();
+            assert($attributes !== null);
+            $attributes = iterator_to_array($attributes);
+            $type       = (string) $attributes['type'];
+            if (
+                ! class_exists($type)
+                || ! ($type === RiskyTestError::class || is_subclass_of($type, RiskyTestError::class))
+            ) {
+                continue;
+            }
+
+            unset($errors[$index]);
+            $risky[] = $error;
+        }
+
         $defect_groups = [
             'failures' => (array) $node->xpath('failure'),
-            'errors' => (array) $node->xpath('error'),
+            'errors' => $errors,
             'warnings' => (array) $node->xpath('warning'),
             'skipped' => (array) $node->xpath('skipped'),
+            'risky' => $risky,
         ];
 
         foreach ($defect_groups as $group => $defects) {
             foreach ($defects as $defect) {
-                $message = (string) $defect;
+                assert($defect !== false);
+
+                $message  = (string) $defect;
                 $message .= (string) $system_output;
-                $case->addDefect($group, (string) $defect['type'], $message);
+
+                $case->{$group}[] = [
+                    'type' => (string) $defect['type'],
+                    'text' => trim($message),
+                ];
             }
         }
 

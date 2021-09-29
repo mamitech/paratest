@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ParaTest\Coverage;
 
+use PHPUnit\TextUI\XmlConfiguration\CodeCoverage\CodeCoverage as CodeCoverageConfiguration;
 use SebastianBergmann\CodeCoverage\CodeCoverage;
 use SebastianBergmann\CodeCoverage\Report\Clover;
 use SebastianBergmann\CodeCoverage\Report\Crap4j;
@@ -13,19 +14,20 @@ use SebastianBergmann\CodeCoverage\Report\Text;
 use SebastianBergmann\CodeCoverage\Report\Xml\Facade as XmlReport;
 use SebastianBergmann\CodeCoverage\Version;
 
-class CoverageReporter implements CoverageReporterInterface
+/**
+ * @internal
+ */
+final class CoverageReporter
 {
-    /**
-     * @var CodeCoverage
-     */
+    /** @var CodeCoverage */
     private $coverage;
+    /** @var CodeCoverageConfiguration|null */
+    private $codeCoverageConfiguration;
 
-    /**
-     * @param CodeCoverage $coverage
-     */
-    public function __construct(CodeCoverage $coverage)
+    public function __construct(CodeCoverage $coverage, ?CodeCoverageConfiguration $codeCoverageConfiguration)
     {
-        $this->coverage = $coverage;
+        $this->coverage                  = $coverage;
+        $this->codeCoverageConfiguration = $codeCoverageConfiguration;
     }
 
     /**
@@ -33,7 +35,7 @@ class CoverageReporter implements CoverageReporterInterface
      *
      * @param string $target Report filename
      */
-    public function clover(string $target)
+    public function clover(string $target): void
     {
         $clover = new Clover();
         $clover->process($this->coverage, $target);
@@ -44,9 +46,13 @@ class CoverageReporter implements CoverageReporterInterface
      *
      * @param string $target Report filename
      */
-    public function crap4j(string $target)
+    public function crap4j(string $target): void
     {
         $xml = new Crap4j();
+        if ($this->codeCoverageConfiguration !== null && $this->codeCoverageConfiguration->hasCrap4j()) {
+            $xml = new Crap4j($this->codeCoverageConfiguration->crap4j()->threshold());
+        }
+
         $xml->process($this->coverage, $target);
     }
 
@@ -55,9 +61,16 @@ class CoverageReporter implements CoverageReporterInterface
      *
      * @param string $target Report filename
      */
-    public function html(string $target)
+    public function html(string $target): void
     {
         $html = new Html\Facade();
+        if ($this->codeCoverageConfiguration !== null && $this->codeCoverageConfiguration->hasHtml()) {
+            $html = new Html\Facade(
+                $this->codeCoverageConfiguration->html()->lowUpperBound(),
+                $this->codeCoverageConfiguration->html()->highLowerBound()
+            );
+        }
+
         $html->process($this->coverage, $target);
     }
 
@@ -66,7 +79,7 @@ class CoverageReporter implements CoverageReporterInterface
      *
      * @param string $target Report filename
      */
-    public function php(string $target)
+    public function php(string $target): void
     {
         $php = new PHP();
         $php->process($this->coverage, $target);
@@ -75,10 +88,11 @@ class CoverageReporter implements CoverageReporterInterface
     /**
      * Generate text coverage report.
      */
-    public function text()
+    public function text(): string
     {
         $text = new Text();
-        echo $text->process($this->coverage);
+
+        return $text->process($this->coverage);
     }
 
     /**
@@ -86,7 +100,7 @@ class CoverageReporter implements CoverageReporterInterface
      *
      * @param string $target Report filename
      */
-    public function xml(string $target)
+    public function xml(string $target): void
     {
         $xml = new XmlReport(Version::id());
         $xml->process($this->coverage, $target);

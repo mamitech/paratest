@@ -4,18 +4,27 @@ declare(strict_types=1);
 
 namespace ParaTest\Parser;
 
-class Parser
-{
-    /**
-     * The path to the source file to parse.
-     *
-     * @var string
-     */
-    private $path;
+use InvalidArgumentException;
+use PHPUnit\Framework\TestCase;
+use PHPUnit\Runner\Exception;
+use PHPUnit\Runner\StandardTestSuiteLoader;
+use ReflectionClass;
+use ReflectionMethod;
 
-    /**
-     * @var \ReflectionClass
-     */
+use function array_diff;
+use function assert;
+use function get_declared_classes;
+use function is_file;
+use function preg_match;
+use function realpath;
+use function str_replace;
+
+/**
+ * @internal
+ */
+final class Parser
+{
+    /** @var ReflectionClass<TestCase> */
     private $refl;
 
     /**
@@ -33,146 +42,110 @@ class Parser
      */
     private static $testAnnotation = '/@test\b/';
 
+    /** @var ReflectionClass<TestCase>[] */
+    private static $alreadyLoadedSources = [];
+
+    /** @var class-string[]  */
+    private static $externalClassesFound = [];
+
     public function __construct(string $srcPath)
     {
-        if (!\file_exists($srcPath)) {
-            throw new \InvalidArgumentException('file not found: ' . $srcPath);
+        if (! is_file($srcPath)) {
+            throw new InvalidArgumentException('file not found: ' . $srcPath);
         }
 
-        $this->path = $srcPath;
-        $declaredClasses = \get_declared_classes();
-        require_once $this->path;
-        $class = $this->getClassName($this->path, $declaredClasses);
-        if (!$class) {
-            throw new NoClassInFileException();
+        $srcPath = realpath($srcPath);
+        assert($srcPath !== false);
+
+        if (! isset(self::$alreadyLoadedSources[$srcPath])) {
+            $declaredClasses = get_declared_classes();
+            try {
+                self::$alreadyLoadedSources[$srcPath] = (new StandardTestSuiteLoader())->load($srcPath);
+
+                self::$externalClassesFound += array_diff(
+                    get_declared_classes(),
+                    $declaredClasses,
+                    [self::$alreadyLoadedSources[$srcPath]->getName()]
+                );
+            } catch (Exception $exception) {
+                self::$externalClassesFound += array_diff(get_declared_classes(), $declaredClasses);
+
+                $reflFound = null;
+                foreach (self::$externalClassesFound as $newClass) {
+                    // DocType is untruth but needed to make SA happy
+                    // Real checks are done below
+                    /** @var ReflectionClass<TestCase> $refClass */
+                    $refClass = new ReflectionClass($newClass);
+                    if ($refClass->getFileName() !== $srcPath) {
+                        continue;
+                    }
+
+                    $reflFound = $refClass;
+                    break;
+                }
+
+                if ($reflFound === null || ! $reflFound->isSubclassOf(TestCase::class) || $reflFound->isAbstract()) {
+                    throw new NoClassInFileException('', 0, $exception);
+                }
+
+                self::$alreadyLoadedSources[$srcPath] = $reflFound;
+            }
         }
-        try {
-            $this->refl = new \ReflectionClass($class);
-        } catch (\ReflectionException $e) {
-            throw new \InvalidArgumentException(
-                'Unable to instantiate ReflectionClass. ' . $class . ' not found in: ' . $srcPath
-            );
-        }
+
+        $this->refl = self::$alreadyLoadedSources[$srcPath];
     }
 
     /**
      * Returns the fully constructed class
      * with methods or null if the class is abstract.
-     *
-     * @return ParsedClass|null
      */
-    public function getClass()
+    public function getClass(): ParsedClass
     {
-        return $this->refl->isAbstract()
-            ? null
-            : new ParsedClass(
-                (string) $this->refl->getDocComment(),
-                $this->getCleanReflectionName(),
-                $this->refl->getNamespaceName(),
-                $this->getMethods()
-            );
+        $parentsCount = 0;
+        $class        = $this->refl;
+        while (($parent = $class->getParentClass()) !== false) {
+            ++$parentsCount;
+            $class = $parent;
+        }
+
+        return new ParsedClass(
+            (string) $this->refl->getDocComment(),
+            $this->getCleanReflectionName(),
+            $this->refl->getNamespaceName(),
+            $this->getMethods(),
+            $parentsCount
+        );
     }
 
     /**
      * Return reflection name with null bytes stripped.
-     *
-     * @return string
      */
     private function getCleanReflectionName(): string
     {
-        return \str_replace("\x00", '', $this->refl->getName());
+        return str_replace("\x00", '', $this->refl->getName());
     }
 
     /**
      * Return all test methods present in the file.
      *
-     * @return array
+     * @return ParsedFunction[]
      */
     private function getMethods(): array
     {
-        $tests = [];
-        $methods = $this->refl->getMethods(\ReflectionMethod::IS_PUBLIC);
+        $tests   = [];
+        $methods = $this->refl->getMethods(ReflectionMethod::IS_PUBLIC);
         foreach ($methods as $method) {
-            $hasTestName = \preg_match(self::$testName, $method->getName());
-            $docComment = $method->getDocComment();
-            $hasTestAnnotation = false !== $docComment && \preg_match(self::$testAnnotation, $docComment);
-            $isTestMethod = $hasTestName || $hasTestAnnotation;
-            if ($isTestMethod) {
-                $tests[] = new ParsedFunction((string) $method->getDocComment(), 'public', $method->getName());
+            $hasTestName       = preg_match(self::$testName, $method->getName()) > 0;
+            $docComment        = $method->getDocComment();
+            $hasTestAnnotation = $docComment !== false && preg_match(self::$testAnnotation, $docComment) > 0;
+            $isTestMethod      = $hasTestName || $hasTestAnnotation;
+            if (! $isTestMethod) {
+                continue;
             }
+
+            $tests[] = new ParsedFunction((string) $method->getDocComment(), $method->getName());
         }
 
         return $tests;
-    }
-
-    /**
-     * Return the class name of the class contained
-     * in the file.
-     *
-     * @param mixed $filename
-     * @param mixed $previousDeclaredClasses
-     *
-     * @return string
-     */
-    private function getClassName(string $filename, array $previousDeclaredClasses)
-    {
-        $filename = \realpath($filename);
-        $classes = \get_declared_classes();
-        $newClasses = \array_values(\array_diff($classes, $previousDeclaredClasses));
-
-        $className = $this->searchForUnitTestClass($newClasses, $filename);
-        if (isset($className)) {
-            return $className;
-        }
-
-        $className = $this->searchForUnitTestClass($classes, $filename);
-        if (isset($className)) {
-            return $className;
-        }
-    }
-
-    /**
-     * Search for the name of the unit test.
-     *
-     * @param string[] $classes
-     * @param string   $filename
-     *
-     * @return string|null
-     */
-    private function searchForUnitTestClass(array $classes, string $filename)
-    {
-        // TODO: After merging this PR or other PR for phpunit 6 support, keep only the applicable subclass name
-        $matchingClassName = null;
-        foreach ($classes as $className) {
-            $class = new \ReflectionClass($className);
-            if ($class->getFileName() === $filename) {
-                if ($class->isSubclassOf('PHPUnit\Framework\TestCase')) {
-                    if ($this->classNameMatchesFileName($filename, $className)) {
-                        return $className;
-                    } elseif ($matchingClassName === null) {
-                        $matchingClassName = $className;
-                    }
-                }
-            }
-        }
-
-        return $matchingClassName;
-    }
-
-    /**
-     * @param $filename
-     * @param $className
-     *
-     * @return bool
-     */
-    private function classNameMatchesFileName(string $filename, string $className): bool
-    {
-        return \strpos($filename, $className) !== false
-            || \strpos($filename, $this->invertSlashes($className)) !== false;
-    }
-
-    private function invertSlashes(string $className): string
-    {
-        return \str_replace('\\', '/', $className);
     }
 }

@@ -4,64 +4,80 @@ declare(strict_types=1);
 
 namespace ParaTest\Runners\PHPUnit;
 
-use Exception;
 use ParaTest\Runners\PHPUnit\Worker\SqliteWorker;
 use PDO;
 use RuntimeException;
+use Symfony\Component\Console\Output\OutputInterface;
 
-class SqliteRunner extends WrapperRunner
+use function array_map;
+use function assert;
+use function count;
+use function dirname;
+use function implode;
+use function realpath;
+use function serialize;
+use function tempnam;
+use function unlink;
+use function unserialize;
+use function usleep;
+
+use const DIRECTORY_SEPARATOR;
+use const PHP_EOL;
+
+/**
+ * @internal
+ */
+final class SqliteRunner extends BaseWrapperRunner
 {
+    /** @var SqliteWorker[] */
+    private $workers = [];
+
     /** @var PDO */
     private $db;
 
     /** @var string */
-    private $dbFileName = null;
+    private $dbFileName;
 
-    public function __construct(array $opts = [])
+    public function __construct(Options $opts, OutputInterface $output)
     {
-        parent::__construct($opts);
+        parent::__construct($opts, $output);
 
-        $this->dbFileName = (string) ($opts['database'] ?? \tempnam(\sys_get_temp_dir(), 'paratest_db_'));
-        $this->db = new PDO('sqlite:' . $this->dbFileName);
+        $dbFileName = tempnam($opts->tmpDir(), 'paratest_db_');
+        assert($dbFileName !== false);
+
+        $this->dbFileName = $dbFileName;
+        $this->db         = new PDO('sqlite:' . $this->dbFileName);
     }
 
     public function __destruct()
     {
-        if ($this->db !== null) {
-            unset($this->db);
-            \unlink($this->dbFileName);
-        }
+        unset($this->db);
+        unlink($this->dbFileName);
     }
 
-    public function run()
+    protected function doRun(): void
     {
-        $this->initialize();
-
         $this->createTable();
         $this->assignAllPendingTests();
         $this->startWorkers();
         $this->waitForAllToFinish();
-        $this->complete();
         $this->checkIfWorkersCrashed();
     }
 
     /**
      * Start all workers.
      */
-    protected function startWorkers(): void
+    private function startWorkers(): void
     {
-        $wrapper = \realpath(__DIR__ . '/../../../bin/phpunit-sqlite-wrapper');
+        $wrapper = realpath(
+            dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'phpunit-sqlite-wrapper.php'
+        );
+        assert($wrapper !== false);
 
-        for ($i = 1; $i <= $this->options->processes; ++$i) {
-            $worker = new SqliteWorker($this->dbFileName);
-            if ($this->options->noTestTokens) {
-                $token = null;
-                $uniqueToken = null;
-            } else {
-                $token = $i;
-                $uniqueToken = \uniqid();
-            }
-            $worker->start($wrapper, $token, $uniqueToken);
+        for ($i = 1; $i <= $this->options->processes(); ++$i) {
+            $worker = new SqliteWorker($this->output, $this->dbFileName);
+
+            $worker->start($wrapper, $this->options, $i);
             $this->workers[] = $worker;
         }
     }
@@ -73,33 +89,38 @@ class SqliteRunner extends WrapperRunner
     {
         do {
             foreach ($this->workers as $key => $worker) {
-                if (!$worker->isRunning()) {
-                    unset($this->workers[$key]);
+                if ($worker->isRunning()) {
+                    continue;
                 }
+
+                $this->setExitCode($worker->getExitCode());
+                unset($this->workers[$key]);
             }
-            \usleep(10000);
+
+            usleep(10000);
             $this->printOutput();
-        } while (\count($this->workers) > 0);
+        } while (count($this->workers) > 0);
     }
 
     /**
      * Initialize test queue table.
      *
-     * @throws Exception
+     * @throws RuntimeException
      */
     private function createTable(): void
     {
-        $statement = 'CREATE TABLE tests (
-                          id INTEGER PRIMARY KEY,
-                          command TEXT NOT NULL UNIQUE,
-                          file_name TEXT NOT NULL,
-                          reserved_by_process_id INTEGER,
-                          completed INTEGER DEFAULT 0
-                        )';
+        $statement = '
+            CREATE TABLE tests (
+              id INTEGER PRIMARY KEY,
+              command TEXT NOT NULL UNIQUE,
+              file_name TEXT NOT NULL,
+              reserved_by_process_id INTEGER,
+              completed INTEGER DEFAULT 0
+            )
+        ';
 
-        if ($this->db->exec($statement) === false) {
-            throw new Exception('Error while creating sqlite database table: ' . $this->db->errorCode());
-        }
+        $tableCreationResult = $this->db->exec($statement);
+        assert($tableCreationResult !== false);
     }
 
     /**
@@ -110,7 +131,11 @@ class SqliteRunner extends WrapperRunner
         foreach ($this->pending as $fileName => $test) {
             $this->db->prepare('INSERT INTO tests (command, file_name) VALUES (:command, :fileName)')
                 ->execute([
-                    ':command' => $test->command($this->options->phpunit, $this->options->filtered),
+                    ':command' => serialize($test->commandArguments(
+                        $this->options->phpunit(),
+                        $this->options->filtered(),
+                        $this->options->passthru()
+                    )),
                     ':fileName' => $fileName,
                 ]);
         }
@@ -121,8 +146,19 @@ class SqliteRunner extends WrapperRunner
      */
     private function printOutput(): void
     {
-        foreach ($this->db->query('SELECT id, file_name FROM tests WHERE completed = 1')->fetchAll() as $test) {
-            $this->printer->printFeedback($this->pending[$test['file_name']]);
+        $stmt = $this->db->query('SELECT id, file_name FROM tests WHERE completed = 1');
+        assert($stmt !== false);
+        $tests = $stmt->fetchAll();
+        assert($tests !== false);
+        foreach ($tests as $test) {
+            $executableTest = $this->pending[$test['file_name']];
+            if ($this->hasCoverage()) {
+                $coverageMerger = $this->getCoverage();
+                assert($coverageMerger !== null);
+                $coverageMerger->addCoverageFromFile($executableTest->getCoverageFileName());
+            }
+
+            $this->printer->printFeedback($executableTest);
             $this->db->prepare('DELETE FROM tests WHERE id = :id')->execute([
                 'id' => $test['id'],
             ]);
@@ -134,11 +170,20 @@ class SqliteRunner extends WrapperRunner
      */
     private function checkIfWorkersCrashed(): void
     {
-        if ($this->db->query('SELECT COUNT(id) FROM tests')->fetchColumn(0) === '0') {
+        $countStmt = $this->db->query('SELECT COUNT(id) FROM tests');
+        assert($countStmt !== false);
+        if ($countStmt->fetchColumn(0) === '0') {
             return;
         }
 
-        throw new RuntimeException(
+        $commandStmt = $this->db->query('SELECT command FROM tests');
+        assert($commandStmt !== false);
+        $commands = (array) $commandStmt->fetchAll(PDO::FETCH_COLUMN);
+        $commands = array_map(static function (string $serializedCommand): string {
+            return implode(' ', array_map('escapeshellarg', unserialize($serializedCommand)));
+        }, $commands);
+
+        throw new WorkerCrashedException(
             'Some workers have crashed.' . PHP_EOL
             . '----------------------' . PHP_EOL
             . 'All workers have quit, but some tests are still to be executed.' . PHP_EOL
@@ -146,7 +191,7 @@ class SqliteRunner extends WrapperRunner
             . '----------------------' . PHP_EOL
             . 'Failed test command(s):' . PHP_EOL
             . '----------------------' . PHP_EOL
-            . \implode(PHP_EOL, $this->db->query('SELECT command FROM tests')->fetchAll(PDO::FETCH_COLUMN))
+            . implode(PHP_EOL, $commands)
         );
     }
 }

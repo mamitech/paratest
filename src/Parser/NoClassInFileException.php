@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace ParaTest\Parser;
 
-class NoClassInFileException extends \Exception
+use Exception;
+
+/**
+ * @internal
+ */
+final class NoClassInFileException extends Exception
 {
 }
