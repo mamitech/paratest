@@ -1,24 +1,13 @@
 {
     "name": "mamitech/paratest",
-    "require": {
-        "php": "^7.1",
-        "ext-pcre": "*",
-        "ext-reflection": "*",
-        "ext-simplexml": "*",
-        "brianium/habitat": "1.0.0",
-        "phpunit/php-timer": "^2.0|^3.0|^4.0|^5.0",
-        "phpunit/phpunit": "^7.5.8|^8.0|^9.0",
-        "symfony/console": "^3.4||^4.0||^5.0",
-        "symfony/process": "^3.4||^4.0||^5.0",
-        "phpunit/php-code-coverage": "^6.1.4|^7.0.2|^8.0"
-    },
-    "require-dev": {
-        "friendsofphp/php-cs-fixer": "^2.16",
-        "squizlabs/php_codesniffer": "^3.5"
-    },
     "type": "library",
     "description": "Parallel testing for PHP",
-    "keywords": ["testing","PHPUnit", "concurrent", "parallel"],
+    "keywords": [
+        "testing",
+        "PHPUnit",
+        "concurrent",
+        "parallel"
+    ],
     "homepage": "https://github.com/paratestphp/paratest",
     "license": "MIT",
     "authors": [
@@ -29,10 +18,39 @@
             "role": "Lead"
         }
     ],
-    "bin": ["bin/paratest"],
+    "require": {
+        "php": "^7.3",
+        "ext-dom": "*",
+        "ext-pcre": "*",
+        "ext-pdo": "*",
+        "ext-reflection": "*",
+        "ext-simplexml": "*",
+        "phpunit/php-code-coverage": "^9.1.2",
+        "phpunit/php-file-iterator": "^3.0",
+        "phpunit/php-timer": "^5.0",
+        "phpunit/phpunit": "^9.3.5",
+        "sebastian/environment": "^5.1",
+        "symfony/console": "^4.4 || ^5.1",
+        "symfony/process": "^4.4 || ^5.1"
+    },
+    "require-dev": {
+        "doctrine/coding-standard": "^8.1.0",
+        "ekino/phpstan-banned-code": "^0.3.1",
+        "ergebnis/phpstan-rules": "^0.15.1",
+        "phpstan/phpstan": "^0.12.37",
+        "phpstan/phpstan-deprecation-rules": "^0.12.5",
+        "phpstan/phpstan-phpunit": "^0.12.16",
+        "phpstan/phpstan-strict-rules": "^0.12.4",
+        "squizlabs/php_codesniffer": "^3.5.6",
+        "symfony/filesystem": "^5.1.3",
+        "thecodingmachine/phpstan-strict-rules": "^0.12.0",
+        "vimeo/psalm": "^3.12.2"
+    },
     "autoload": {
         "psr-4": {
-            "ParaTest\\": ["src/"]
+            "ParaTest\\": [
+                "src/"
+            ]
         }
     },
     "autoload-dev": {
@@ -40,32 +58,7 @@
             "ParaTest\\Tests\\": "test/"
         }
     },
-    "scripts": {
-        "style": [
-            "php-cs-fixer fix --dry-run --verbose"
-        ],
-        "style-fix": [
-            "php-cs-fixer fix"
-        ],
-        "test": [
-            "phpunit"
-        ],
-        "test-unit": [
-            "phpunit test/Unit/"
-        ],
-        "test-functional": [
-            "phpunit test/Functional/"
-        ],
-        "test-paratest": [
-            "bin/paratest"
-        ]
-    },
-    "scripts-descriptions": {
-        "style": "Run style checks (only dry run - no fixing!)",
-        "style-fix": "Run style checks and fix violations",
-        "test": "Run all tests",
-        "test-unit": "Run only unit tests",
-        "test-functional": "Run only functional tests",
-        "test-paratest": "Run all tests with paratest itself"
-    }
+    "bin": [
+        "bin/paratest"
+    ]
 }

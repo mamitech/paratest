@@ -5,37 +5,30 @@ declare(strict_types=1);
 namespace ParaTest\Tests\Unit\Parser;
 
 use ParaTest\Parser\ParsedClass;
+use ParaTest\Tests\TestBase;
 
-class ParsedObjectTest extends \ParaTest\Tests\TestBase
+/**
+ * @internal
+ *
+ * @covers \ParaTest\Parser\ParsedObject
+ * @covers \ParaTest\Parser\ParsedFunction
+ */
+final class ParsedObjectTest extends TestBase
 {
-    protected $parsedClass;
+    /** @var ParsedClass  */
+    private $parsedClass;
+    /** @var string */
+    private $docBlock;
 
-    public function setUp(): void
+    public function setUpTest(): void
     {
-        $this->parsedClass = new ParsedClass("/**\n * @test\n @group group1\n*\/", 'MyClass', 'My\\Name\\Space');
+        $this->docBlock    = "/**\n * @test\n @group group1\n*\\/";
+        $this->parsedClass = new ParsedClass($this->docBlock, self::class, 'My\\Name\\Space', [], 4);
     }
 
-    public function testHasAnnotationReturnsTrueWhenAnnotationPresent()
+    public function testGetters(): void
     {
-        $hasAnnotation = $this->parsedClass->hasAnnotation('test');
-        $this->assertTrue($hasAnnotation);
-    }
-
-    public function testHasAnnotationReturnsFalseWhenAnnotationNotPresent()
-    {
-        $hasAnnotation = $this->parsedClass->hasAnnotation('pizza');
-        $this->assertFalse($hasAnnotation);
-    }
-
-    public function testHasAnnotationReturnsTrueWhenAnnotationAndValueMatch()
-    {
-        $hasAnnotation = $this->parsedClass->hasAnnotation('group', 'group1');
-        $this->assertTrue($hasAnnotation);
-    }
-
-    public function testHasAnnotationReturnsFalseWhenAnnotationAndValueDontMatch()
-    {
-        $hasAnnotation = $this->parsedClass->hasAnnotation('group', 'group2');
-        $this->assertFalse($hasAnnotation);
+        static::assertSame(self::class, $this->parsedClass->getName());
+        static::assertSame($this->docBlock, $this->parsedClass->getDocBlock());
     }
 }

@@ -5,103 +5,65 @@ declare(strict_types=1);
 namespace ParaTest\Coverage;
 
 use SebastianBergmann\CodeCoverage\CodeCoverage;
+use SebastianBergmann\CodeCoverage\ProcessedCodeCoverageData;
+use SebastianBergmann\Environment\Runtime;
 
-class CoverageMerger
+use function array_map;
+use function array_slice;
+use function filesize;
+use function is_file;
+use function unlink;
+
+/**
+ * @internal
+ */
+final class CoverageMerger
 {
-    /**
-     * @var CodeCoverage
-     */
-    private $coverage = null;
+    /** @var CodeCoverage|null */
+    private $coverage;
+    /** @var int */
+    private $testLimit;
 
-    private $test_limit = null;
-
-    public function __construct(int $test_limit = 0)
+    public function __construct(int $testLimit)
     {
-        $this->test_limit = $test_limit;
+        $this->testLimit = $testLimit;
     }
 
-    /**
-     * @param CodeCoverage $coverage
-     */
-    private function addCoverage(CodeCoverage $coverage)
+    private function addCoverage(CodeCoverage $coverage): void
     {
-        if (null === $this->coverage) {
+        if ($this->coverage === null) {
             $this->coverage = $coverage;
         } else {
             $this->coverage->merge($coverage);
         }
+
         $this->limitCoverageTests($this->coverage);
-    }
-
-    /**
-     * Returns coverage object from file.
-     *
-     * @param \SplFileObject $coverageFile coverage file
-     *
-     * @return CodeCoverage
-     */
-    private function getCoverageObject(\SplFileObject $coverageFile): CodeCoverage
-    {
-        if ('<?php' === $coverageFile->fread(5)) {
-            return include $coverageFile->getRealPath();
-        }
-
-        $coverageFile->fseek(0);
-        // the PHPUnit 3.x and below
-        return \unserialize($coverageFile->fread($coverageFile->getSize()));
     }
 
     /**
      * Adds the coverage contained in $coverageFile and deletes the file afterwards.
      *
      * @param string $coverageFile Code coverage file
-     *
-     * @throws \RuntimeException When coverage file is empty
      */
-    public function addCoverageFromFile(string $coverageFile = null)
+    public function addCoverageFromFile(string $coverageFile): void
     {
-        if ($coverageFile === null || !\file_exists($coverageFile)) {
-            return;
-        }
-
-        $file = new \SplFileObject($coverageFile);
-
-        if (0 === $file->getSize()) {
+        if (! is_file($coverageFile) || filesize($coverageFile) === 0) {
             $extra = 'This means a PHPUnit process has crashed.';
-
-            $xdebug = \function_exists('xdebug_get_code_coverage');
-            $phpdbg = \PHP_SAPI === 'phpdbg';
-            $pcov = \extension_loaded('pcov') && \ini_get('pcov.enabled');
-
-            if (!$xdebug && !$phpdbg && !$pcov) {
+            if (! (new Runtime())->canCollectCodeCoverage()) {
+                // @codeCoverageIgnoreStart
                 $extra = 'No coverage driver found! Enable one of Xdebug, PHPDBG or PCOV for coverage.';
+                // @codeCoverageIgnoreEnd
             }
 
-            throw new \RuntimeException(
-                "Coverage file {$file->getRealPath()} is empty. " . $extra
-            );
+            throw new EmptyCoverageFileException("Coverage file {$coverageFile} is empty. " . $extra);
         }
 
-        $this->addCoverage($this->getCoverageObject($file));
+        /** @psalm-suppress UnresolvableInclude **/
+        $this->addCoverage(include $coverageFile);
 
-        \unlink($file->getRealPath());
+        unlink($coverageFile);
     }
 
-    /**
-     * Get coverage report generator.
-     *
-     * @return CoverageReporterInterface
-     */
-    public function getReporter(): CoverageReporterInterface
-    {
-        return new CoverageReporter($this->coverage);
-    }
-
-    /**
-     * Get CodeCoverage object.
-     *
-     * @return CodeCoverage
-     */
     public function getCodeCoverageObject(): ?CodeCoverage
     {
         return $this->coverage;
@@ -109,19 +71,23 @@ class CoverageMerger
 
     private function limitCoverageTests(CodeCoverage $coverage): void
     {
-        if ($this->test_limit) {
-            $coverage->setData(\array_map(
-                function (array $lines) {
-                    return \array_map(function ($value) {
-                        if (!\is_array($value)) {
-                            return $value;
-                        }
-
-                        return \array_slice($value, 0, $this->test_limit);
-                    }, $lines);
-                },
-                $coverage->getData($raw = true)
-            ));
+        if ($this->testLimit === 0) {
+            return;
         }
+
+        $testLimit     = $this->testLimit;
+        $data          = $coverage->getData(true);
+        $newData       = array_map(
+            static function (array $lines) use ($testLimit): array {
+                return array_map(static function (array $value) use ($testLimit): array {
+                    return array_slice($value, 0, $testLimit);
+                }, $lines);
+            },
+            $data->lineCoverage(),
+        );
+        $processedData = new ProcessedCodeCoverageData();
+        $processedData->setLineCoverage($newData);
+
+        $coverage->setData($processedData);
     }
 }

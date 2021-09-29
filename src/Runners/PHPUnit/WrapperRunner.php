@@ -4,141 +4,118 @@ declare(strict_types=1);
 
 namespace ParaTest\Runners\PHPUnit;
 
+use ParaTest\Coverage\EmptyCoverageFileException;
 use ParaTest\Runners\PHPUnit\Worker\WrapperWorker;
+use RuntimeException;
+use Symfony\Component\Console\Output\OutputInterface;
 
-class WrapperRunner extends BaseRunner
+use function array_keys;
+use function array_shift;
+use function assert;
+use function count;
+use function defined;
+use function dirname;
+use function realpath;
+use function stream_select;
+
+use const DIRECTORY_SEPARATOR;
+
+/**
+ * @internal
+ */
+final class WrapperRunner extends BaseWrapperRunner
 {
-    private const PHPUNIT_FAILURES = 1;
+    /** @var WrapperWorker[] */
+    private $workers = [];
 
-    private const PHPUNIT_ERRORS = 2;
+    /** @var resource[] */
+    private $streams = [];
 
-    /**
-     * @var array
-     */
-    protected $streams;
+    /** @var resource[] */
+    private $modified = [];
 
-    /**
-     * @var WrapperWorker[]
-     */
-    protected $workers;
-
-    /**
-     * @var array
-     */
-    protected $modified;
-
-    public function run()
+    public function __construct(Options $opts, OutputInterface $output)
     {
-        parent::run();
+        if (defined('PHP_WINDOWS_VERSION_BUILD')) {
+            throw new RuntimeException('WrapperRunner is not supported on Windows'); // @codeCoverageIgnore
+        }
 
+        parent::__construct($opts, $output);
+    }
+
+    protected function doRun(): void
+    {
         $this->startWorkers();
         $this->assignAllPendingTests();
         $this->sendStopMessages();
         $this->waitForAllToFinish();
-        $this->complete();
     }
 
-    protected function load(SuiteLoader $loader)
+    private function startWorkers(): void
     {
-        if ($this->options->functional) {
-            throw new \RuntimeException(
-                'The `functional` option is not supported yet in the WrapperRunner. Only full classes can be run due ' .
-                    'to the current PHPUnit commands causing classloading issues.'
-            );
-        }
-        parent::load($loader);
-    }
+        $wrapper = realpath(
+            dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'phpunit-wrapper.php'
+        );
+        assert($wrapper !== false);
+        for ($i = 1; $i <= $this->options->processes(); ++$i) {
+            $worker = new WrapperWorker($this->output);
 
-    protected function startWorkers()
-    {
-        $wrapper = \realpath(__DIR__ . '/../../../bin/phpunit-wrapper');
-        for ($i = 1; $i <= $this->options->processes; ++$i) {
-            $worker = new WrapperWorker();
-            if ($this->options->noTestTokens) {
-                $token = null;
-                $uniqueToken = null;
-            } else {
-                $token = $i;
-                $uniqueToken = \uniqid();
-            }
-            $worker->start($wrapper, $token, $uniqueToken, [], $this->options);
+            $worker->start($wrapper, $this->options, $i);
             $this->streams[] = $worker->stdout();
             $this->workers[] = $worker;
         }
     }
 
-    private function assignAllPendingTests()
+    private function assignAllPendingTests(): void
     {
-        $phpunit = $this->options->phpunit;
-        $phpunitOptions = $this->options->filtered;
-        // $phpunitOptions['no-globals-backup'] = null;  // removed in phpunit 6.0
-        while (\count($this->pending)) {
+        $phpunit        = $this->options->phpunit();
+        $phpunitOptions = $this->options->filtered();
+
+        while (count($this->pending) > 0 && count($this->workers) > 0) {
             $this->waitForStreamsToChange($this->streams);
             foreach ($this->progressedWorkers() as $key => $worker) {
-                if ($worker->isFree()) {
-                    try {
-                        $this->flushWorker($worker);
-                        $pending = \array_shift($this->pending);
-                        if ($pending) {
-                            $worker->assign($pending, $phpunit, $phpunitOptions, $this->options);
-                        }
-                    } catch (\Exception $e) {
-                        if ($this->options->verbose) {
-                            $worker->stop();
-                            echo "Error while assigning pending tests for worker $key: {$e->getMessage()}" . PHP_EOL;
-                            echo $worker->getCrashReport();
-                        }
-                        throw $e;
+                if (! $worker->isRunning()) {
+                    $this->setExitCode($worker->getExitCode());
+                    unset($this->workers[$key]);
+                    if ($this->options->stopOnFailure()) {
+                        $this->pending = [];
                     }
+
+                    continue;
                 }
+
+                if (! $worker->isFree()) {
+                    // Happens randomly depending on concurrency and resource usage
+                    // Cannot be covered by tests reliably
+                    continue; // @codeCoverageIgnore
+                }
+
+                $this->flushWorker($worker);
+                $pending = array_shift($this->pending);
+                if ($pending === null) {
+                    // Happens randomly depending on concurrency and resource usage
+                    // Cannot be covered by tests reliably
+                    continue; // @codeCoverageIgnore
+                }
+
+                $worker->assign($pending, $phpunit, $phpunitOptions, $this->options);
             }
         }
     }
 
-    private function sendStopMessages()
+    /**
+     * put on WorkersPool
+     *
+     * @param resource[] $modified
+     */
+    private function waitForStreamsToChange(array $modified): void
     {
-        foreach ($this->workers as $worker) {
-            $worker->stop();
-        }
-    }
-
-    private function waitForAllToFinish()
-    {
-        $toStop = $this->workers;
-        while (\count($toStop) > 0) {
-            $toCheck = $this->streamsOf($toStop);
-            $new = $this->waitForStreamsToChange($toCheck);
-            foreach ($this->progressedWorkers() as $index => $worker) {
-                try {
-                    if (!$worker->isRunning()) {
-                        $this->flushWorker($worker);
-                        unset($toStop[$index]);
-                    }
-                } catch (\Exception $e) {
-                    if ($this->options->verbose) {
-                        $worker->stop();
-                        unset($toStop[$index]);
-                        echo "Error while waiting to finish for worker $index: {$e->getMessage()}" . PHP_EOL;
-                        echo $worker->getCrashReport();
-                    }
-                    throw $e;
-                }
-            }
-        }
-    }
-
-    // put on WorkersPool
-    private function waitForStreamsToChange(array $modified)
-    {
-        $write = [];
+        $write  = [];
         $except = [];
-        $result = \stream_select($modified, $write, $except, 1);
-        if ($result === false) {
-            throw new \RuntimeException('stream_select() returned an error while waiting for all workers to finish.');
-        }
-        $this->modified = $modified;
+        $result = stream_select($modified, $write, $except, 1);
+        assert($result !== false);
 
-        return $result;
+        $this->modified = $modified;
     }
 
     /**
@@ -157,72 +134,79 @@ class WrapperRunner extends BaseRunner
                     break;
                 }
             }
+
+            assert($found !== null);
+
             $result[$found] = $this->workers[$found];
         }
+
         $this->modified = [];
 
         return $result;
     }
 
+    private function flushWorker(WrapperWorker $worker): void
+    {
+        if ($this->hasCoverage()) {
+            $coverageMerger = $this->getCoverage();
+            assert($coverageMerger !== null);
+            if (($coverageFileName = $worker->getCoverageFileName()) !== null) {
+                try {
+                    $coverageMerger->addCoverageFromFile($coverageFileName);
+                } catch (EmptyCoverageFileException $emptyCoverageFileException) {
+                    throw new WorkerCrashedException($worker->getCrashReport(), 0, $emptyCoverageFileException);
+                }
+            }
+        }
+
+        try {
+            $worker->printFeedback($this->printer);
+        } catch (EmptyLogFileException $emptyLogFileException) {
+            throw new WorkerCrashedException($worker->getCrashReport(), 0, $emptyLogFileException);
+        }
+
+        $worker->reset();
+    }
+
+    private function sendStopMessages(): void
+    {
+        foreach ($this->workers as $worker) {
+            $worker->stop();
+        }
+    }
+
+    private function waitForAllToFinish(): void
+    {
+        $toStop = $this->workers;
+        while (count($toStop) > 0) {
+            $toCheck = $this->streamsOf($toStop);
+            $this->waitForStreamsToChange($toCheck);
+            foreach ($this->progressedWorkers() as $index => $worker) {
+                if ($worker->isRunning()) {
+                    continue;
+                }
+
+                $this->flushWorker($worker);
+                $this->setExitCode($worker->getExitCode());
+                unset($toStop[$index]);
+            }
+        }
+    }
+
     /**
      * Returns the output streams of a subset of workers.
      *
-     * @param array    keys are positions in $this->workers
+     * @param WrapperWorker[] $workers keys are positions in $this->workers
      *
-     * @return array
+     * @return resource[]
      */
     private function streamsOf(array $workers): array
     {
         $streams = [];
-        foreach (\array_keys($workers) as $index) {
+        foreach (array_keys($workers) as $index) {
             $streams[$index] = $this->streams[$index];
         }
 
         return $streams;
     }
-
-    protected function complete()
-    {
-        $this->setExitCode();
-        $this->printer->printResults();
-        $this->interpreter->rewind();
-        $this->log();
-        $this->logCoverage();
-        $readers = $this->interpreter->getReaders();
-        foreach ($readers as $reader) {
-            $reader->removeLog();
-        }
-    }
-
-    private function setExitCode()
-    {
-        if ($this->interpreter->getTotalErrors()) {
-            $this->exitcode = self::PHPUNIT_ERRORS;
-        } elseif ($this->interpreter->getTotalFailures()) {
-            $this->exitcode = self::PHPUNIT_FAILURES;
-        } else {
-            $this->exitcode = 0;
-        }
-    }
-
-    private function flushWorker(WrapperWorker $worker)
-    {
-        if ($this->hasCoverage()) {
-            $this->getCoverage()->addCoverageFromFile($worker->getCoverageFileName());
-        }
-        $worker->printFeedback($this->printer);
-        $worker->reset();
-    }
-
-    /*
-    private function testIsStillRunning($test)
-    {
-        if(!$test->isDoneRunning()) return true;
-        $this->setExitCode($test);
-        $test->stop();
-        if (static::PHPUNIT_FATAL_ERROR === $test->getExitCode())
-            throw new \Exception($test->getStderr(), $test->getExitCode());
-        return false;
-    }
-     */
 }

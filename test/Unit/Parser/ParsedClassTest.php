@@ -6,71 +6,44 @@ namespace ParaTest\Tests\Unit\Parser;
 
 use ParaTest\Parser\ParsedClass;
 use ParaTest\Parser\ParsedFunction;
+use ParaTest\Tests\TestBase;
 
-class ParsedClassTest extends \ParaTest\Tests\TestBase
+/**
+ * @internal
+ *
+ * @covers \ParaTest\Parser\ParsedClass
+ */
+final class ParsedClassTest extends TestBase
 {
-    protected $class;
-    protected $methods;
+    /** @var ParsedClass  */
+    private $class;
+    /** @var ParsedFunction[]  */
+    private $methods;
 
-    public function setUp(): void
+    public function setUpTest(): void
     {
         $this->methods = [
             new ParsedFunction(
                 '/**
               * @group group1
               */',
-                'public',
                 'testFunction'
             ),
             new ParsedFunction(
                 '/**
               * @group group2
               */',
-                'public',
                 'testFunction2'
             ),
-            new ParsedFunction('', 'public', 'testFunction3'),
+            new ParsedFunction('', 'testFunction3'),
         ];
-        $this->class = new ParsedClass('', 'MyTestClass', '', $this->methods);
+        $this->class   = new ParsedClass('', 'MyTestClass', 'MyNamespace', $this->methods, 4);
     }
 
-    public function testGetMethodsReturnsMethods()
+    public function testGetters(): void
     {
-        $this->assertEquals($this->methods, $this->class->getMethods());
-    }
-
-    public function testGetMethodsMultipleAnnotationsReturnsMethods()
-    {
-        $goodMethod = new ParsedFunction(
-            '/**
-              * @group group1
-              */',
-            'public',
-            'testFunction'
-        );
-        $goodMethod2 = new ParsedFunction(
-            '/**
-              * @group group2
-              */',
-            'public',
-            'testFunction2'
-        );
-        $badMethod = new ParsedFunction(
-            '/**
-              * @group group3
-              */',
-            'public',
-            'testFunction2'
-        );
-        $annotatedClass = new ParsedClass('', 'MyTestClass', '', [$goodMethod, $goodMethod2, $badMethod]);
-        $methods = $annotatedClass->getMethods(['group' => 'group1,group2']);
-        $this->assertEquals([$goodMethod, $goodMethod2], $methods);
-    }
-
-    public function testGetMethodsExceptsAdditionalAnnotationFilter()
-    {
-        $group1 = $this->class->getMethods(['group' => 'group1']);
-        $this->assertCount(1, $group1);
-        $this->assertEquals($this->methods[0], $group1[0]);
+        static::assertSame('MyNamespace', $this->class->getNamespace());
+        static::assertSame($this->methods, $this->class->getMethods());
+        static::assertSame(4, $this->class->getParentsCount());
     }
 }
