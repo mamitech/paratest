@@ -6,10 +6,13 @@ namespace ParaTest\Tests\Unit\Parser;
 
 use ParaTest\Parser\ParsedClass;
 use ParaTest\Parser\ParsedFunction;
+use ParaTest\Tests\TestBase;
 
-class ParsedClassTest extends \ParaTest\Tests\TestBase
+class ParsedClassTest extends TestBase
 {
+    /** @var ParsedClass  */
     protected $class;
+    /** @var ParsedFunction[]  */
     protected $methods;
 
     public function setUp(): void
@@ -31,31 +34,31 @@ class ParsedClassTest extends \ParaTest\Tests\TestBase
             ),
             new ParsedFunction('', 'public', 'testFunction3'),
         ];
-        $this->class = new ParsedClass('', 'MyTestClass', '', $this->methods);
+        $this->class   = new ParsedClass('', 'MyTestClass', '', $this->methods);
     }
 
-    public function testGetMethodsReturnsMethods()
+    public function testGetMethodsReturnsMethods(): void
     {
         $this->assertEquals($this->methods, $this->class->getMethods());
     }
 
-    public function testGetMethodsMultipleAnnotationsReturnsMethods()
+    public function testGetMethodsMultipleAnnotationsReturnsMethods(): void
     {
-        $goodMethod = new ParsedFunction(
+        $goodMethod     = new ParsedFunction(
             '/**
               * @group group1
               */',
             'public',
             'testFunction'
         );
-        $goodMethod2 = new ParsedFunction(
+        $goodMethod2    = new ParsedFunction(
             '/**
               * @group group2
               */',
             'public',
             'testFunction2'
         );
-        $badMethod = new ParsedFunction(
+        $badMethod      = new ParsedFunction(
             '/**
               * @group group3
               */',
@@ -63,11 +66,11 @@ class ParsedClassTest extends \ParaTest\Tests\TestBase
             'testFunction2'
         );
         $annotatedClass = new ParsedClass('', 'MyTestClass', '', [$goodMethod, $goodMethod2, $badMethod]);
-        $methods = $annotatedClass->getMethods(['group' => 'group1,group2']);
+        $methods        = $annotatedClass->getMethods(['group' => 'group1,group2']);
         $this->assertEquals([$goodMethod, $goodMethod2], $methods);
     }
 
-    public function testGetMethodsExceptsAdditionalAnnotationFilter()
+    public function testGetMethodsExceptsAdditionalAnnotationFilter(): void
     {
         $group1 = $this->class->getMethods(['group' => 'group1']);
         $this->assertCount(1, $group1);

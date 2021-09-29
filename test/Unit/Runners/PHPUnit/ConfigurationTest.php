@@ -4,32 +4,40 @@ declare(strict_types=1);
 
 namespace ParaTest\Tests\Unit\Runners\PHPUnit;
 
+use Exception;
 use ParaTest\Runners\PHPUnit\Configuration;
 use ParaTest\Runners\PHPUnit\SuitePath;
+use ParaTest\Tests\TestBase;
+use Throwable;
 
-class ConfigurationTest extends \ParaTest\Tests\TestBase
+use function getcwd;
+use function getenv;
+use function libxml_disable_entity_loader;
+use function putenv;
+use function realpath;
+
+class ConfigurationTest extends TestBase
 {
-    /**
-     * @var string
-     */
+    /** @var string */
     protected $path;
-    /**
-     * @var Configuration
-     */
+    /** @var Configuration */
     protected $config;
 
     public function setUp(): void
     {
-        $this->path = realpath(PARATEST_ROOT . '/phpunit.xml.dist');
+        $this->path   = realpath(PARATEST_ROOT . '/phpunit.xml.dist');
         $this->config = new Configuration($this->path);
     }
 
-    public function testToStringReturnsPath()
+    public function testToStringReturnsPath(): void
     {
         $this->assertEquals($this->path, (string) $this->config);
     }
 
-    public function testGetSuitesShouldReturnCorrectNumberOfSuites()
+    /**
+     * @return SuitePath[][]
+     */
+    public function testGetSuitesShouldReturnCorrectNumberOfSuites(): array
     {
         $suites = $this->config->getSuites();
         $this->assertCount(2, $suites);
@@ -37,36 +45,20 @@ class ConfigurationTest extends \ParaTest\Tests\TestBase
         return $suites;
     }
 
-    public function testHasSuites()
+    public function testHasSuites(): void
     {
         $actual = $this->config->hasSuites();
         $this->assertTrue($actual);
     }
 
-    public function testGlobbingSupport()
-    {
-        $basePath = getcwd() . DS;
-        $configuration = new Configuration($this->fixture('phpunit-globbing.xml'));
-        /** @var SuitePath[][] $suites */
-        $suites = $configuration->getSuites();
-        $this->assertEquals(
-            $basePath . 'test' . DS . 'fixtures' . DS . 'globbing-support-tests' . DS . 'some-dir',
-            $suites['ParaTest Fixtures'][0]->getPath()
-        );
-        $this->assertEquals(
-            $basePath . 'test' . DS . 'fixtures' . DS . 'globbing-support-tests' . DS . 'some-dir2',
-            $suites['ParaTest Fixtures'][1]->getPath()
-        );
-
-        return $suites;
-    }
-
     /**
-     * @depends testGetSuitesShouldReturnCorrectNumberOfSuites
+     * @param SuitePath[][] $suites
      *
-     * @param mixed $suites
+     * @return  SuitePath[][]
+     *
+     * @depends testGetSuitesShouldReturnCorrectNumberOfSuites
      */
-    public function testSuitesContainSuiteNameAtKey($suites)
+    public function testSuitesContainSuiteNameAtKey(array $suites): array
     {
         $this->assertArrayHasKey('ParaTest Unit Tests', $suites);
         $this->assertArrayHasKey('ParaTest Functional Tests', $suites);
@@ -75,13 +67,13 @@ class ConfigurationTest extends \ParaTest\Tests\TestBase
     }
 
     /**
-     * @depends testSuitesContainSuiteNameAtKey
+     * @param SuitePath[][] $suites
      *
-     * @param mixed $suites
+     * @depends testSuitesContainSuiteNameAtKey
      */
-    public function testSuitesContainPathAsValue($suites)
+    public function testSuitesContainPathAsValue(array $suites): void
     {
-        $basePath = getcwd() . DS;
+        $basePath  = getcwd() . DS;
         $unitSuite = $suites['ParaTest Unit Tests'];
         $this->assertIsArray($unitSuite);
         $this->assertCount(1, $unitSuite);
@@ -96,7 +88,7 @@ class ConfigurationTest extends \ParaTest\Tests\TestBase
         $this->assertEquals($basePath . 'test' . DS . 'Functional', $functionalSuitePath->getPath());
     }
 
-    public function testGetEnvironmentVariables()
+    public function testGetEnvironmentVariables(): void
     {
         $this->assertCount(4, $this->config->getEnvironmentVariables());
         $this->assertArrayHasKey('APP_ENV', $this->config->getEnvironmentVariables());
@@ -104,18 +96,34 @@ class ConfigurationTest extends \ParaTest\Tests\TestBase
         $this->assertArrayHasKey('DB_CONNECTION', $this->config->getEnvironmentVariables());
         $this->assertArrayHasKey('DB_DATABASE', $this->config->getEnvironmentVariables());
 
-        $config = new Configuration(realpath(__DIR__ . '/phpunit.xml.dist'));
+        $config = new Configuration(realpath(__DIR__ . '/phpunit-ConfigurationTest.xml'));
         $this->assertCount(0, $config->getEnvironmentVariables());
     }
 
-    public function testLoadConfigEvenIfLibXmlEntityLoaderIsDisabled()
+    public function testGlobbingSupport(): void
+    {
+        $basePath      = getcwd() . DS;
+        $configuration = new Configuration($this->fixture('phpunit-globbing.xml'));
+        /** @var SuitePath[][] $suites */
+        $suites = $configuration->getSuites();
+        $this->assertEquals(
+            $basePath . 'test' . DS . 'fixtures' . DS . 'globbing-support-tests' . DS . 'some-dir',
+            $suites['ParaTest Fixtures'][0]->getPath()
+        );
+        $this->assertEquals(
+            $basePath . 'test' . DS . 'fixtures' . DS . 'globbing-support-tests' . DS . 'some-dir2',
+            $suites['ParaTest Fixtures'][1]->getPath()
+        );
+    }
+
+    public function testLoadConfigEvenIfLibXmlEntityLoaderIsDisabled(): void
     {
         $before = libxml_disable_entity_loader();
-        $e = null;
+        $e      = null;
 
         try {
             $this->config = new Configuration($this->path);
-        } catch (\Exception $exc) {
+        } catch (Throwable $exc) {
             $e = $exc;
         }
 
@@ -123,18 +131,18 @@ class ConfigurationTest extends \ParaTest\Tests\TestBase
 
         $this->assertNull(
             $e,
-            'Could not instantiate Configuration: ' . ($e instanceof \Exception ? $e->getMessage() : 'no error given')
+            'Could not instantiate Configuration: ' . ($e instanceof Exception ? $e->getMessage() : 'no error given')
         );
     }
 
-    public function testLoadedEnvironmentVariablesWillNotBeOverwritten()
+    public function testLoadedEnvironmentVariablesWillNotBeOverwritten(): void
     {
-        \putenv('DB_CONNECTION=mysql');
-        \putenv('DB_DATABASE=localhost');
+        putenv('DB_CONNECTION=mysql');
+        putenv('DB_DATABASE=localhost');
 
-        $config = new Configuration(realpath(__DIR__ . '/phpunit.xml.dist'));
+        $config = new Configuration(realpath(__DIR__ . '/phpunit-ConfigurationTest.xml'));
 
-        $this->assertSame('mysql', \getenv('DB_CONNECTION'));
-        $this->assertSame('localhost', \getenv('DB_DATABASE'));
+        $this->assertSame('mysql', getenv('DB_CONNECTION'));
+        $this->assertSame('localhost', getenv('DB_DATABASE'));
     }
 }

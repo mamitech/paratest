@@ -4,22 +4,31 @@ declare(strict_types=1);
 
 namespace ParaTest\Tests\Functional;
 
+use function file_put_contents;
+use function is_dir;
+use function mkdir;
+use function uniqid;
+
 class TestGenerator
 {
+    /** @var string */
     public $path;
+    /** @var string  */
     private $fullPath;
 
     public function __construct()
     {
-        $this->path = 'generated-tests' . DS . uniqid();
+        $this->path     = 'generated-tests' . DS . uniqid();
         $this->fullPath = FIXTURES . DS . $this->path;
 
-        if (!is_dir($this->fullPath)) {
-            mkdir($this->fullPath, 0777, true);
+        if (is_dir($this->fullPath)) {
+            return;
         }
+
+        mkdir($this->fullPath, 0777, true);
     }
 
-    public function generate($tests = 1, $methods = 1)
+    public function generate(int $tests = 1, int $methods = 1): void
     {
         for ($i = 0; $i < $tests; ++$i) {
             $name = "Generated{$i}Test";
@@ -28,12 +37,12 @@ class TestGenerator
         }
     }
 
-    private function generateTestString($testName, $methods = 1)
+    private function generateTestString(string $testName, int $methods = 1): string
     {
         $php = '<' . "?php\n\nclass $testName extends PHPUnit\\Framework\\TestCase\n{\n";
 
         for ($i = 0; $i < $methods; ++$i) {
-            $php .= "\tpublic function testMethod{$i}(){";
+            $php .= "\tpublic function testMethod{$i}(): void{";
             $php .= "\$this->assertTrue(true);}\n";
         }
 

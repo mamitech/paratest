@@ -7,15 +7,16 @@ namespace ParaTest\Tests\Unit\Util;
 use ParaTest\Util\Str;
 use PHPUnit\Framework\TestCase;
 
+use function array_values;
+
 class StrTest extends TestCase
 {
     /**
-     * @param string $delimiter
-     * @param string $valueString
-     * @param array  $expected
+     * @param array<string, array<string, string|string[]>> $expected
+     *
      * @dataProvider explodeWithCleanupDataProvider
      */
-    public function testExplodeWithCleanup(string $delimiter, string $valueString, array $expected)
+    public function testExplodeWithCleanup(string $delimiter, string $valueString, array $expected): void
     {
         $actual = Str::explodeWithCleanup($delimiter, $valueString);
         $actual = array_values($actual);
@@ -23,7 +24,10 @@ class StrTest extends TestCase
         $this->assertEquals($expected, $actual);
     }
 
-    public function explodeWithCleanupDataProvider()
+    /**
+     * @return array<string, array<string, string|string[]>>
+     */
+    public function explodeWithCleanupDataProvider(): array
     {
         return [
             'default' => [

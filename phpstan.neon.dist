@@ -1,0 +1,70 @@
+includes:
+    - phar://phpstan.phar/conf/config.level6.neon
+    - vendor/phpstan/phpstan-phpunit/extension.neon
+
+parameters:
+    tipsOfTheDay: false
+    bootstrapFiles:
+        - test/constants.php
+    paths:
+        - bin/
+        - bin/paratest
+        - src/
+        - test/
+    excludes_analyse:
+        - test/fixtures/*
+    ignoreErrors:
+        # Known fixtures
+        -
+            message: "#^Property ParaTest\\\\Runners\\\\PHPUnit\\\\ExecutableTest\\:\\:\\$process type has no value type specified in iterable type Symfony\\\\Component\\\\Process\\\\Process\\.$#"
+            count: 1
+            path: src/Runners/PHPUnit/ExecutableTest.php
+        -
+            message: "#^Call to method PHPUnit\\\\Framework\\\\Assert\\:\\:assertTrue\\(\\) with false will always evaluate to false\\.$#"
+            count: 1
+            path: test/fixtures/excluded-tests/excluded/ExcludedFailingTest.php
+
+        -
+            message: "#^Call to method PHPUnit\\\\Framework\\\\Assert\\:\\:assertFalse\\(\\) with true will always evaluate to false\\.$#"
+            count: 1
+            path: test/fixtures/failing-tests/FailingTest.php
+
+        -
+            message: "#^Call to method PHPUnit\\\\Framework\\\\Assert\\:\\:assertTrue\\(\\) with false will always evaluate to false\\.$#"
+            count: 1
+            path: test/fixtures/failing-tests/FailingTest.php
+
+        -
+            message: "#^Call to method PHPUnit\\\\Framework\\\\Assert\\:\\:assertFalse\\(\\) with true will always evaluate to false\\.$#"
+            count: 1
+            path: test/fixtures/failing-tests/StopOnFailureTest.php
+
+        -
+            message: "#^Call to method PHPUnit\\\\Framework\\\\Assert\\:\\:assertTrue\\(\\) with false will always evaluate to false\\.$#"
+            count: 1
+            path: test/fixtures/failing-tests/StopOnFailureTest.php
+
+        -
+            message: "#^Call to method PHPUnit\\\\Framework\\\\Assert\\:\\:assertFalse\\(\\) with true will always evaluate to false\\.$#"
+            count: 1
+            path: test/fixtures/failing-tests/UnitTestWithClassAnnotationTest.php
+
+        -
+            message: "#^Unreachable statement \\- code above always terminates\\.$#"
+            count: 1
+            path: test/fixtures/failing-tests/UnitTestWithErrorTest.php
+
+        -
+            message: "#^Call to method PHPUnit\\\\Framework\\\\Assert\\:\\:assertFalse\\(\\) with true will always evaluate to false\\.$#"
+            count: 1
+            path: test/fixtures/failing-tests/UnitTestWithMethodAnnotationsTest.php
+
+        -
+            message: "#^Call to method PHPUnit\\\\Framework\\\\Assert\\:\\:assertFalse\\(\\) with true will always evaluate to false\\.$#"
+            count: 1
+            path: test/fixtures/slow-tests/LongRunningTest.php
+
+        -
+            message: "#^Call to method PHPUnit\\\\Framework\\\\Assert\\:\\:assertTrue\\(\\) with false will always evaluate to false\\.$#"
+            count: 1
+            path: test/fixtures/wrapper-runner-exit-code-tests/FailureTest.php

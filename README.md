@@ -1,8 +1,11 @@
 ParaTest
 ========
 
-[![Build Status](https://travis-ci.org/paratestphp/paratest.svg?branch=master)](https://travis-ci.org/paratestphp/paratest)
-[![Packagist](https://img.shields.io/packagist/dt/brianium/paratest.svg)](https://packagist.org/packages/brianium/paratest)
+[![Latest Stable Version](https://img.shields.io/packagist/v/brianium/paratest.svg)](https://packagist.org/packages/brianium/paratest)
+[![Downloads](https://img.shields.io/packagist/dt/brianium/paratest.svg)](https://packagist.org/packages/brianium/paratest)
+[![Integrate](https://github.com/paratestphp/paratest/workflows/Integrate/badge.svg?branch=master)](https://github.com/paratestphp/paratest/actions)
+[![Code Coverage](https://codecov.io/gh/paratestphp/paratest/coverage.svg?branch=master)](https://codecov.io/gh/paratestphp/paratest?branch=master)
+[![Type Coverage](https://shepherd.dev/github/paratestphp/paratest/coverage.svg)](https://shepherd.dev/github/paratestphp/paratest)
 
 The objective of ParaTest is to support parallel testing in PHPUnit. Provided you have well-written PHPUnit tests, you can drop `paratest` in your project and
 start using it with no additional bootstrap or configurations!
@@ -134,6 +137,14 @@ The corresponding logfiles are placed in your `sys_get_temp_dir()`.
 See [Logging docs](docs/logging.md) for further information.
 
 ### Generating code coverage
+
+Beginning from PHPUnit 9.3.4, it is strongly advised to warm the coverage cache before running any code-coverage
+analysis, see [PHPUnit Changlog @ 9.3.4](https://github.com/sebastianbergmann/phpunit/blob/master/ChangeLog-9.3.md#934---2020-08-10):
+
+```
+vendor/bin/phpunit --warm-coverage-cache
+``` 
+
 Examples assume your tests are located under `./test/unit`.
 ````
 vendor/bin/paratest -p 1 --coverage-text test/unit
@@ -234,6 +245,7 @@ composer run-script -l
 scripts:
   style            Run style checks (only dry run - no fixing!)
   style-fix        Run style checks and fix violations
+  static-analysis  Run static analysis
   test             Run all tests
   test-unit        Run only unit tests
   test-functional  Run only functional tests
@@ -252,8 +264,11 @@ You can run all tests at once by running phpunit from the project directory:
 ParaTest can run its own test suite by running it from the `bin` directory:
 `composer test` OR `bin/paratest`
 
+Analyse the code statically:
+`composer static-analysis`
+
 Before creating a Pull Request be sure to run the style checks and commit the eventual changes:
-`composer style-fix` OR `vendor/bin/php-cs-fixer fix`
+`composer style-fix`
 
 Use `composer style` to only show violations without fixing.
 
