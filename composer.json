@@ -27,9 +27,9 @@
         "ext-reflection": "*",
         "ext-simplexml": "*",
         "brianium/habitat": "^1.0",
-        "phpunit/php-code-coverage": "^9.1.2",
-        "phpunit/php-timer": "^5.0",
-        "phpunit/phpunit": "^9.3.5",
+        "phpunit/php-code-coverage": "^7",
+        "phpunit/php-timer": "^2",
+        "phpunit/phpunit": "^8",
         "symfony/console": "^4.4 || ^5.1",
         "symfony/process": "^4.4 || ^5.1"
     },
